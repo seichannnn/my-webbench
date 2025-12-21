@@ -57,6 +57,15 @@
             cursor: not-allowed;
             filter: grayscale(0.8);
         }
+        /* Cancel Button Style */
+        .btn-danger {
+            background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%);
+            transition: all 0.2s;
+        }
+        .btn-danger:hover {
+            box-shadow: 0 4px 15px rgba(239, 68, 68, 0.4);
+            filter: brightness(1.1);
+        }
         .score-display {
             font-variant-numeric: tabular-nums;
         }
@@ -132,7 +141,7 @@
     <div class="w-full max-w-7xl flex flex-col sm:flex-row justify-between items-start sm:items-end mb-4 sm:mb-6 border-b border-purple-900/50 pb-4 gap-4 sm:gap-0 transition-all duration-300" id="header-container">
         <div>
             <h1 class="text-2xl sm:text-3xl lg:text-4xl font-bold text-white tracking-wider transition-all duration-300">WEBBENCH <span class="text-purple-400 text-sm sm:text-base align-top" id="version-text">Hybrid</span></h1>
-            <p class="text-purple-300/60 text-xs sm:text-sm mt-1">Browser-based Hardware Stress Test <span class="badge-ludicrous" id="load-badge">INSANE LOAD</span></p>
+            <p class="text-purple-300/60 text-xs sm:text-sm mt-1">Browser-based Hardware Stress Test <span class="badge-ludicrous" id="load-badge">HEAVY LOAD</span></p>
         </div>
         <div class="text-right flex flex-col items-end gap-1 w-full sm:w-auto">
             <div class="text-purple-300/60 text-xs sm:text-sm">System Info</div>
@@ -214,7 +223,7 @@
     <!-- Footer -->
     <div class="mt-8 sm:mt-12 text-gray-500 text-xs sm:text-sm text-center pb-8">
         <p>Warning: This benchmark places extreme load on CPU, GPU or Memory.</p>
-        <p class="text-xs opacity-50 mt-1">Insane Mode: 1080p / 16x Samples / 250+ Objects / 7 Bounces</p>
+        <p class="text-xs opacity-50 mt-1">Heavy Mode: 1080p / 8x Samples / 140+ Objects / 5 Bounces</p>
         
         <div class="mt-6 pt-6 border-t border-gray-800/50 w-2/3 mx-auto">
             <p class="text-purple-400 font-bold mb-1">About</p>
@@ -241,9 +250,9 @@
         // --- Raytracing Logic ---
         const spheres = [];
         spheres.push({ c: new Vec3(0, 1, 0), r: 1, mat: 2, col: new Vec3(0.8, 0.8, 0.8) });
-        // Significantly increased object count for Insane Mode
-        for (let x = -8; x < 8; x++) {
-            for (let z = -8; z < 8; z++) {
+        // Heavy Mode: Reduced object count (approx 144 spheres)
+        for (let x = -6; x < 6; x++) {
+            for (let z = -6; z < 6; z++) {
                 let r = 0.5 + 0.5 * Math.sin(x * 0.5);
                 let g = 0.5 + 0.5 * Math.sin(z * 0.5);
                 let b = 0.5 + 0.5 * Math.cos((x+z) * 0.3);
@@ -285,8 +294,8 @@
             for (let i = 0; i < spheres.length; i++) { if (id !== i) { if (intersectSphere(shadowRayOrigin, lightDir, spheres[i]) < Infinity) { shadow = 0.1; break; } } }
             let diff = Math.max(0, n.dot(lightDir));
             let finalCol = col.mul(diff * shadow + 0.05);
-            // Increased depth for Insane Mode
-            if (isMirror && depth < 7) {
+            // Heavy Mode: Reduced Depth to 5
+            if (isMirror && depth < 5) {
                 let reflectDir = rd.sub(n.mul(2 * rd.dot(n))).norm();
                 let reflectCol = trace(p.add(n.mul(0.001)), reflectDir, depth + 1);
                 finalCol = finalCol.mul(0.2).add(reflectCol.mul(0.8));
@@ -328,8 +337,8 @@
                 const camForward = camTarget.sub(camPos).norm(), worldUp = new Vec3(0, 1, 0);
                 const camRight = worldUp.cross(camForward).norm(), camUp = camForward.cross(camRight).norm();
                 const pixelData = new Uint8ClampedArray(width * height * 4);
-                // Increased Samples for Insane Mode
-                const SAMPLES = 16; 
+                // Heavy Mode: Reduced Samples to 8
+                const SAMPLES = 8; 
                 for (let y = 0; y < height; y++) {
                     for (let x = 0; x < width; x++) {
                         let r = 0, g = 0, b = 0;
@@ -356,7 +365,7 @@
     <!-- MAIN SCRIPT -->
     <script>
         // --- Configuration ---
-        const CPU_RES_W = 1920; // Full HD for Insane Mode
+        const CPU_RES_W = 1920; // Full HD
         const CPU_RES_H = 1080;
         const GPU_RES_W = 1920; 
         const GPU_RES_H = 1080;
@@ -391,12 +400,14 @@
         let completedBlocks = 0;
         let totalBlocks = 0;
         let cpuFrames = 0;
+        let cpuAnimationId; // Store RAF ID for cancelling
         let logicalProcessors = navigator.hardwareConcurrency || 4;
 
         // RAM State
         let ramTotalBytes = 0;
         let ramTotalTime = 0;
         let ramIterations = 0;
+        let ramTimeoutId; // Store Timeout ID for cancelling
         const RAM_PASS_DEFAULT = 10; 
 
         // GPU State
@@ -425,7 +436,7 @@
             bodyApp.className = "min-h-screen flex flex-col items-center justify-center p-3 sm:p-6 md:p-8"; // Reset
             
             if (currentMode === 'cpu') {
-                statusText.textContent = "Ready (1080p / 16x AA / 250+ Objs)";
+                statusText.textContent = "Ready (1080p / 8x AA / 140+ Objs)";
                 resDisplay.textContent = "Scene: High Density Spheres | Res: 1920x1080";
                 startBtn.textContent = "RUN CPU BENCHMARK";
                 updateScores('cpu');
@@ -522,13 +533,50 @@
             return c;
         }
 
+        // --- Cancel Logic ---
+        function cancelBenchmark() {
+            isRunning = false;
+            
+            // Stop Loops
+            cancelAnimationFrame(cpuAnimationId);
+            cancelAnimationFrame(gpuAnimationId);
+            clearTimeout(ramTimeoutId);
+
+            // Kill Workers
+            workers.forEach(w => w.worker.terminate());
+            workers = [];
+
+            // Reset UI
+            startBtn.textContent = "RUN BENCHMARK";
+            startBtn.classList.remove('btn-danger');
+            startBtn.disabled = false;
+            modeSelect.disabled = false;
+            durationSelect.disabled = false;
+            statusText.textContent = "Cancelled";
+            scoreDisplay.textContent = "--";
+            
+            // Clear bucket visuals
+            document.querySelectorAll('.bucket').forEach(el => el.remove());
+            
+            // Reset RAM visuals
+            document.querySelectorAll('.ram-cell').forEach(c => c.classList.remove('active'));
+        }
+
         // --- Main Runner ---
         startBtn.addEventListener('click', () => {
-            if (isRunning) return;
+            if (isRunning) {
+                cancelBenchmark();
+                return;
+            }
+            
             isRunning = true;
-            startBtn.disabled = true;
+            startBtn.textContent = "CANCEL";
+            startBtn.classList.add('btn-danger');
+            // Disabled is removed, we want to click it to cancel.
+            // But we should disable inputs.
             modeSelect.disabled = true;
             durationSelect.disabled = true;
+            
             shareArea.classList.add('hidden');
             scoreDisplay.textContent = "Running...";
             startTime = performance.now();
@@ -603,7 +651,7 @@
                         ramTotalTime += dur;
                         
                         document.querySelectorAll('.ram-cell').forEach(c => c.classList.remove('active'));
-                        setTimeout(startRamPass, 50); 
+                        ramTimeoutId = setTimeout(startRamPass, 50); 
                     }
                 };
             });
@@ -611,7 +659,8 @@
 
         function finishRamBenchmark() {
             isRunning = false;
-            startBtn.disabled = false;
+            startBtn.textContent = "RUN AGAIN";
+            startBtn.classList.remove('btn-danger');
             modeSelect.disabled = false;
             durationSelect.disabled = false;
             
@@ -622,7 +671,6 @@
             
             scoreDisplay.textContent = `${finalScore} pts`;
             statusText.textContent = `RAM Speed: ~${avgBwGB.toFixed(2)} GB/s`;
-            startBtn.textContent = "RUN AGAIN";
             shareArea.classList.remove('hidden');
         }
 
@@ -660,7 +708,7 @@
 
             cpuFrames = 0;
             startCpuFrame();
-            requestAnimationFrame(updateCpuTimer);
+            cpuAnimationId = requestAnimationFrame(updateCpuTimer);
         }
 
         function startCpuFrame() {
@@ -736,11 +784,7 @@
             if (!isRunning || currentMode !== 'cpu') return;
             const elapsed = (performance.now() - startTime) / 1000;
             timeDisplay.textContent = `Time: ${elapsed.toFixed(2)}s`;
-            
-            // Just visual update logic for loop
-            // Logic handled in finishCpuFrame
-            
-            requestAnimationFrame(updateCpuTimer);
+            cpuAnimationId = requestAnimationFrame(updateCpuTimer);
         }
 
         function finishCpuFrame() {
@@ -759,29 +803,26 @@
                 finishCpuBenchmarkAll();
             } else {
                 // Loop
-                // Optional: Clear canvas or keep overwriting? 
-                // Overwriting is fine and faster.
                 startCpuFrame();
             }
         }
 
         function finishCpuBenchmarkAll() {
             isRunning = false;
-            startBtn.disabled = false;
+            startBtn.textContent = "RUN AGAIN";
+            startBtn.classList.remove('btn-danger');
             modeSelect.disabled = false;
             durationSelect.disabled = false;
             
             const dur = (performance.now() - startTime) / 1000;
             const pixels = CPU_RES_W * CPU_RES_H * cpuFrames;
-            // Updated Load Weight for Insane Mode settings
-            // 270 is derived from resolution bump and sample bump
-            const loadWeight = 270;
+            // Adjusted weight for "Heavy" mode
+            const loadWeight = 120;
             const pps = pixels / dur;
             finalScore = Math.floor(pps / 10 * loadWeight / 100);
             
             scoreDisplay.textContent = `${finalScore} pts`;
             statusText.textContent = `CPU Benchmark Complete (${cpuFrames} loops)`;
-            startBtn.textContent = "RUN AGAIN";
             shareArea.classList.remove('hidden');
         }
 
@@ -886,13 +927,15 @@
             return shader;
         }
         function finishGpuBenchmark(durationMs) {
-            isRunning = false; startBtn.disabled = false; modeSelect.disabled = false; durationSelect.disabled = false;
+            isRunning = false; 
+            startBtn.textContent = "RUN AGAIN";
+            startBtn.classList.remove('btn-danger');
+            modeSelect.disabled = false; durationSelect.disabled = false;
             const durationSec = durationMs / 1000;
             const avgFps = gpuFrameCount / durationSec;
             finalScore = Math.floor(avgFps * 350); 
             scoreDisplay.textContent = `${finalScore} pts`;
             statusText.textContent = `GPU Finished: Avg ${Math.floor(avgFps)} FPS`;
-            startBtn.textContent = "RUN AGAIN";
             shareArea.classList.remove('hidden');
         }
 
@@ -900,7 +943,7 @@
         copyBtn.addEventListener('click', () => {
             const cpuName = cpuInput.value || "Unknown Device";
             let modeName = '';
-            if (currentMode === 'cpu') modeName = 'CPU (Insane)';
+            if (currentMode === 'cpu') modeName = 'CPU (Heavy)';
             else if (currentMode === 'gpu') modeName = 'GPU (Mandelbox)';
             else modeName = 'RAM (Bandwidth)';
             
