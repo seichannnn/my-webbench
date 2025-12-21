@@ -132,7 +132,7 @@
     <div class="w-full max-w-7xl flex flex-col sm:flex-row justify-between items-start sm:items-end mb-4 sm:mb-6 border-b border-purple-900/50 pb-4 gap-4 sm:gap-0 transition-all duration-300" id="header-container">
         <div>
             <h1 class="text-2xl sm:text-3xl lg:text-4xl font-bold text-white tracking-wider transition-all duration-300">WEBBENCH <span class="text-purple-400 text-sm sm:text-base align-top" id="version-text">Hybrid</span></h1>
-            <p class="text-purple-300/60 text-xs sm:text-sm mt-1">Browser-based Hardware Stress Test <span class="badge-ludicrous" id="load-badge">EXTREME LOAD</span></p>
+            <p class="text-purple-300/60 text-xs sm:text-sm mt-1">Browser-based Hardware Stress Test <span class="badge-ludicrous" id="load-badge">INSANE LOAD</span></p>
         </div>
         <div class="text-right flex flex-col items-end gap-1 w-full sm:w-auto">
             <div class="text-purple-300/60 text-xs sm:text-sm">System Info</div>
@@ -213,7 +213,8 @@
 
     <!-- Footer -->
     <div class="mt-8 sm:mt-12 text-gray-500 text-xs sm:text-sm text-center pb-8">
-        <p>Warning: This benchmark places heavy load on CPU, GPU or Memory.</p>
+        <p>Warning: This benchmark places extreme load on CPU, GPU or Memory.</p>
+        <p class="text-xs opacity-50 mt-1">Insane Mode: 1080p / 16x Samples / 250+ Objects / 7 Bounces</p>
         
         <div class="mt-6 pt-6 border-t border-gray-800/50 w-2/3 mx-auto">
             <p class="text-purple-400 font-bold mb-1">About</p>
@@ -240,14 +241,15 @@
         // --- Raytracing Logic ---
         const spheres = [];
         spheres.push({ c: new Vec3(0, 1, 0), r: 1, mat: 2, col: new Vec3(0.8, 0.8, 0.8) });
-        for (let x = -5; x < 5; x++) {
-            for (let z = -6; z < 4; z++) {
+        // Significantly increased object count for Insane Mode
+        for (let x = -8; x < 8; x++) {
+            for (let z = -8; z < 8; z++) {
                 let r = 0.5 + 0.5 * Math.sin(x * 0.5);
                 let g = 0.5 + 0.5 * Math.sin(z * 0.5);
                 let b = 0.5 + 0.5 * Math.cos((x+z) * 0.3);
                 let mat = ((x + z) % 5 === 0) ? 2 : 1;
                 let radius = 0.2 + 0.15 * Math.sin(x*z);
-                spheres.push({c: new Vec3(x * 1.2 + Math.sin(z)*0.5, radius, z * 1.2 - 2),r: radius,mat: mat,col: new Vec3(r, g, b)});
+                spheres.push({c: new Vec3(x * 1.0 + Math.sin(z)*0.5, radius, z * 1.0 - 2),r: radius,mat: mat,col: new Vec3(r, g, b)});
             }
         }
         const lightDir = new Vec3(0.5, 1, -0.5).norm();
@@ -283,7 +285,8 @@
             for (let i = 0; i < spheres.length; i++) { if (id !== i) { if (intersectSphere(shadowRayOrigin, lightDir, spheres[i]) < Infinity) { shadow = 0.1; break; } } }
             let diff = Math.max(0, n.dot(lightDir));
             let finalCol = col.mul(diff * shadow + 0.05);
-            if (isMirror && depth < 5) {
+            // Increased depth for Insane Mode
+            if (isMirror && depth < 7) {
                 let reflectDir = rd.sub(n.mul(2 * rd.dot(n))).norm();
                 let reflectCol = trace(p.add(n.mul(0.001)), reflectDir, depth + 1);
                 finalCol = finalCol.mul(0.2).add(reflectCol.mul(0.8));
@@ -325,7 +328,8 @@
                 const camForward = camTarget.sub(camPos).norm(), worldUp = new Vec3(0, 1, 0);
                 const camRight = worldUp.cross(camForward).norm(), camUp = camForward.cross(camRight).norm();
                 const pixelData = new Uint8ClampedArray(width * height * 4);
-                const SAMPLES = 12; 
+                // Increased Samples for Insane Mode
+                const SAMPLES = 16; 
                 for (let y = 0; y < height; y++) {
                     for (let x = 0; x < width; x++) {
                         let r = 0, g = 0, b = 0;
@@ -352,8 +356,8 @@
     <!-- MAIN SCRIPT -->
     <script>
         // --- Configuration ---
-        const CPU_RES_W = 1280;
-        const CPU_RES_H = 720;
+        const CPU_RES_W = 1920; // Full HD for Insane Mode
+        const CPU_RES_H = 1080;
         const GPU_RES_W = 1920; 
         const GPU_RES_H = 1080;
         
@@ -421,8 +425,8 @@
             bodyApp.className = "min-h-screen flex flex-col items-center justify-center p-3 sm:p-6 md:p-8"; // Reset
             
             if (currentMode === 'cpu') {
-                statusText.textContent = "Ready (HD / 12x AA)";
-                resDisplay.textContent = "Scene: 100 Spheres | Res: 1280x720";
+                statusText.textContent = "Ready (1080p / 16x AA / 250+ Objs)";
+                resDisplay.textContent = "Scene: High Density Spheres | Res: 1920x1080";
                 startBtn.textContent = "RUN CPU BENCHMARK";
                 updateScores('cpu');
             } else if (currentMode === 'gpu') {
@@ -628,9 +632,14 @@
         // CPU BENCHMARK LOGIC
         // ==========================================
         function runCpuBenchmark() {
-            // Setup Workers
+            const canvas = document.getElementById('render-canvas');
+            const ctx = canvas.getContext('2d');
+            
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, CPU_RES_W, CPU_RES_H);
+
             workers.forEach(w => w.worker.terminate());
-            workers = []; // clear old workers
+            workers = []; 
             
             const workerScript = document.getElementById('worker-code').textContent;
             const blob = new Blob([workerScript], { type: 'text/javascript' });
@@ -764,7 +773,9 @@
             
             const dur = (performance.now() - startTime) / 1000;
             const pixels = CPU_RES_W * CPU_RES_H * cpuFrames;
-            const loadWeight = 75;
+            // Updated Load Weight for Insane Mode settings
+            // 270 is derived from resolution bump and sample bump
+            const loadWeight = 270;
             const pps = pixels / dur;
             finalScore = Math.floor(pps / 10 * loadWeight / 100);
             
@@ -889,7 +900,7 @@
         copyBtn.addEventListener('click', () => {
             const cpuName = cpuInput.value || "Unknown Device";
             let modeName = '';
-            if (currentMode === 'cpu') modeName = 'CPU (Ludicrous+)';
+            if (currentMode === 'cpu') modeName = 'CPU (Insane)';
             else if (currentMode === 'gpu') modeName = 'GPU (Mandelbox)';
             else modeName = 'RAM (Bandwidth)';
             
