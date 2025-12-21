@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WebBench - CPU Raytracing (Ludicrous)</title>
+    <title>WebBench - CPU Raytracing (Ludicrous+)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body {
@@ -91,8 +91,8 @@
     <!-- Header -->
     <div class="w-full max-w-7xl flex flex-col sm:flex-row justify-between items-start sm:items-end mb-4 sm:mb-6 border-b border-purple-900/50 pb-4 gap-4 sm:gap-0 transition-all duration-300">
         <div>
-            <h1 class="text-2xl sm:text-3xl lg:text-4xl font-bold text-white tracking-wider transition-all duration-300">WEBBENCH <span class="text-purple-400 text-sm sm:text-base align-top">Ludicrous</span></h1>
-            <p class="text-purple-300/60 text-xs sm:text-sm mt-1">JavaScript CPU Stress Test <span class="badge-ludicrous">MAXIMUM LOAD</span></p>
+            <h1 class="text-2xl sm:text-3xl lg:text-4xl font-bold text-white tracking-wider transition-all duration-300">WEBBENCH <span class="text-purple-400 text-sm sm:text-base align-top">Ludicrous+</span></h1>
+            <p class="text-purple-300/60 text-xs sm:text-sm mt-1">JavaScript CPU Stress Test <span class="badge-ludicrous">EXTREME LOAD</span></p>
         </div>
         <div class="text-right flex flex-col items-end gap-1 w-full sm:w-auto">
             <div class="text-purple-300/60 text-xs sm:text-sm">System Info</div>
@@ -110,9 +110,9 @@
             <div class="bg-gray-900/80 p-4 sm:p-5 rounded-lg border border-purple-900/50 shadow-lg">
                 <h2 class="text-xs sm:text-sm font-bold text-purple-400 mb-3 uppercase tracking-wide">Actions</h2>
                 <button id="start-btn" class="btn-primary w-full text-white font-bold py-3 sm:py-4 px-6 rounded-md shadow-lg mb-3 text-base sm:text-lg transition-all duration-300">
-                    RUN LUDICROUS
+                    RUN EXTREME
                 </button>
-                <div id="status-text" class="text-xs sm:text-sm text-center text-purple-300 h-6 mb-2">Ready (100 Objects)</div>
+                <div id="status-text" class="text-xs sm:text-sm text-center text-purple-300 h-6 mb-2">Ready (HD / 12x AA)</div>
                 
                 <!-- Share Area (Hidden initially) -->
                 <div id="share-area" class="hidden border-t border-gray-700 pt-4 mt-2 flex flex-col gap-2">
@@ -164,12 +164,12 @@
         <!-- Render Viewport (Right Panel) -->
         <div class="lg:col-span-3 order-1 lg:order-2">
             <div class="canvas-container rounded-lg border-2 border-purple-900/30 relative w-full aspect-video bg-black shadow-2xl" id="canvas-wrapper">
-                <canvas id="render-canvas" width="960" height="540"></canvas>
+                <canvas id="render-canvas" width="1280" height="720"></canvas>
                 <!-- Buckets will be injected here via JS -->
             </div>
             
             <div class="mt-3 flex justify-between text-xs sm:text-sm text-gray-500 font-mono px-1">
-                <span id="resolution-info">Scene: 100 Spheres | Res: 960x540 | 8x Samples</span>
+                <span id="resolution-info">Scene: 100 Spheres | Res: 1280x720 | 12x Samples</span>
                 <span id="time-info">Time: 0.00s</span>
             </div>
         </div>
@@ -178,7 +178,7 @@
     <!-- Footer -->
     <div class="mt-8 sm:mt-12 text-gray-500 text-xs sm:text-sm text-center pb-8">
         <p>Warning: This benchmark places extreme load on your CPU.</p>
-        <p>Collision checks per frame: ~2 Billion.</p>
+        <p>Collision checks per frame: ~3.5 Billion.</p>
         
         <div class="mt-6 pt-6 border-t border-gray-800/50 w-2/3 mx-auto">
             <p class="text-purple-400 font-bold mb-1">About</p>
@@ -318,7 +318,8 @@
             const camUp = camForward.cross(camRight).norm();
 
             const pixelData = new Uint8ClampedArray(width * height * 4);
-            const SAMPLES = 8; 
+            // SAMPLES increased to 12 for Extreme Load
+            const SAMPLES = 12; 
 
             for (let y = 0; y < height; y++) {
                 for (let x = 0; x < width; x++) {
@@ -347,8 +348,8 @@
     <script>
         // --- Main Configuration ---
         const BLOCK_SIZE = 64; 
-        const RENDER_WIDTH = 960; 
-        const RENDER_HEIGHT = 540;
+        const RENDER_WIDTH = 1280; // Increased Resolution to HD
+        const RENDER_HEIGHT = 720;
         
         // --- DOM Elements ---
         const canvas = document.getElementById('render-canvas');
@@ -461,15 +462,26 @@
             taskQueue = [];
             let id = 0;
             const bs = 32; 
+            const centerX = RENDER_WIDTH / 2;
+            const centerY = RENDER_HEIGHT / 2;
+
             for (let y = 0; y < RENDER_HEIGHT; y += bs) {
                 for (let x = 0; x < RENDER_WIDTH; x += bs) {
                     const w = Math.min(bs, RENDER_WIDTH - x);
                     const h = Math.min(bs, RENDER_HEIGHT - y);
-                    taskQueue.push({ id: id++, x, y, w, h });
+                    
+                    // Calculate distance from center for Spiral/Center-out rendering
+                    const bx = x + w/2;
+                    const by = y + h/2;
+                    const distSq = (bx - centerX) ** 2 + (by - centerY) ** 2;
+
+                    taskQueue.push({ id: id++, x, y, w, h, distSq });
                 }
             }
             totalBlocks = taskQueue.length;
-            taskQueue.sort(() => Math.random() - 0.5);
+            
+            // Sort tasks by distance from center (Center-out)
+            taskQueue.sort((a, b) => a.distSq - b.distSq);
         }
 
         function startBenchmark() {
@@ -506,7 +518,8 @@
             const durationSec = (endTime - startTime) / 1000;
             
             const totalPixels = RENDER_WIDTH * RENDER_HEIGHT;
-            const loadWeight = 50; 
+            // Increased load weight for Ludicrous+ settings
+            const loadWeight = 75; 
             const pps = totalPixels / durationSec;
             finalScore = Math.floor(pps / 10 * loadWeight / 100); 
 
@@ -521,7 +534,7 @@
 
         copyBtn.addEventListener('click', () => {
             const cpuName = cpuInput.value || "Unknown CPU";
-            const text = `WebBench Score: ${finalScore} pts (${logicalProcessors} Threads / ${cpuName}) - Ludicrous Mode`;
+            const text = `WebBench Score: ${finalScore} pts (${logicalProcessors} Threads / ${cpuName}) - Ludicrous+ Mode`;
             
             // Fallback for iframe restrictions using document.execCommand
             const textArea = document.createElement("textarea");
@@ -557,7 +570,7 @@
         ctx.font = '30px sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText("LUDICROUS MODE", RENDER_WIDTH/2, RENDER_HEIGHT/2);
+        ctx.fillText("EXTREME MODE", RENDER_WIDTH/2, RENDER_HEIGHT/2);
 
     </script>
 </body>
