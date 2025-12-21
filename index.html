@@ -3,14 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WebBench - CPU Raytracing (Ludicrous+)</title>
+    <title>WebBench - CPU & GPU Benchmark</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body {
             background-color: #0f0f13;
             color: #e0e0e0;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            /* スムーズなリサイズアニメーション */
             transition: padding 0.3s ease;
         }
         .canvas-container {
@@ -26,10 +25,10 @@
             height: auto;
             display: block;
         }
-        /* バケット（レンダリング中の四角い枠） */
+        /* バケット（CPUレンダリング中の枠） */
         .bucket {
             position: absolute;
-            border: 1px solid #d946ef; /* 紫/ピンク系 */
+            border: 1px solid #d946ef;
             background-color: rgba(217, 70, 239, 0.2);
             pointer-events: none;
             z-index: 10;
@@ -64,7 +63,6 @@
             box-shadow: 0 0 10px rgba(147, 51, 234, 0.5);
             white-space: nowrap;
         }
-        /* Share Buttons */
         .btn-copy {
             background-color: #374151;
             transition: all 0.2s;
@@ -72,33 +70,38 @@
         .btn-copy:hover {
             background-color: #4b5563;
         }
-        /* CPU Input */
-        .cpu-input {
+        .cpu-input, .mode-select {
             background-color: rgba(31, 41, 55, 0.5);
             border: 1px solid rgba(75, 85, 99, 0.5);
             color: #d1d5db;
             transition: all 0.2s;
         }
-        .cpu-input:focus {
+        .cpu-input:focus, .mode-select:focus {
             outline: none;
             border-color: #9333ea;
             background-color: rgba(31, 41, 55, 0.8);
         }
+        /* Mode selection specific styles */
+        .mode-gpu .text-purple-400 { color: #3b82f6; } /* Blue for GPU */
+        .mode-gpu .border-purple-900\/50 { border-color: rgba(30, 58, 138, 0.5); }
+        .mode-gpu .btn-primary { background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%); }
+        .mode-gpu .badge-ludicrous { background-color: #2563eb; box-shadow: 0 0 10px rgba(37, 99, 235, 0.5); }
+        .mode-gpu .canvas-container { box-shadow: 0 0 30px rgba(37, 99, 235, 0.3); }
     </style>
 </head>
-<body class="min-h-screen flex flex-col items-center justify-center p-3 sm:p-6 md:p-8">
+<body class="min-h-screen flex flex-col items-center justify-center p-3 sm:p-6 md:p-8" id="body-app">
 
     <!-- Header -->
-    <div class="w-full max-w-7xl flex flex-col sm:flex-row justify-between items-start sm:items-end mb-4 sm:mb-6 border-b border-purple-900/50 pb-4 gap-4 sm:gap-0 transition-all duration-300">
+    <div class="w-full max-w-7xl flex flex-col sm:flex-row justify-between items-start sm:items-end mb-4 sm:mb-6 border-b border-purple-900/50 pb-4 gap-4 sm:gap-0 transition-all duration-300" id="header-container">
         <div>
-            <h1 class="text-2xl sm:text-3xl lg:text-4xl font-bold text-white tracking-wider transition-all duration-300">WEBBENCH <span class="text-purple-400 text-sm sm:text-base align-top">Ludicrous+</span></h1>
-            <p class="text-purple-300/60 text-xs sm:text-sm mt-1">JavaScript CPU Stress Test <span class="badge-ludicrous">EXTREME LOAD</span></p>
+            <h1 class="text-2xl sm:text-3xl lg:text-4xl font-bold text-white tracking-wider transition-all duration-300">WEBBENCH <span class="text-purple-400 text-sm sm:text-base align-top" id="version-text">Hybrid</span></h1>
+            <p class="text-purple-300/60 text-xs sm:text-sm mt-1">Browser-based Hardware Stress Test <span class="badge-ludicrous" id="load-badge">EXTREME LOAD</span></p>
         </div>
         <div class="text-right flex flex-col items-end gap-1 w-full sm:w-auto">
             <div class="text-purple-300/60 text-xs sm:text-sm">System Info</div>
             <div class="text-xl sm:text-2xl font-bold text-white leading-none transition-all duration-300" id="core-count">--</div>
             <!-- CPU Name Input Field -->
-            <input type="text" id="cpu-name-input" class="cpu-input text-xs sm:text-sm px-3 py-1 rounded text-right w-full sm:w-56 mt-1" placeholder="Enter CPU Name">
+            <input type="text" id="cpu-name-input" class="cpu-input text-xs sm:text-sm px-3 py-1 rounded text-right w-full sm:w-56 mt-1" placeholder="Enter Device Name">
         </div>
     </div>
 
@@ -107,12 +110,22 @@
         
         <!-- Controls & Results (Left Panel) -->
         <div class="lg:col-span-1 flex flex-col gap-4 order-2 lg:order-1">
-            <div class="bg-gray-900/80 p-4 sm:p-5 rounded-lg border border-purple-900/50 shadow-lg">
-                <h2 class="text-xs sm:text-sm font-bold text-purple-400 mb-3 uppercase tracking-wide">Actions</h2>
+            <div class="bg-gray-900/80 p-4 sm:p-5 rounded-lg border border-purple-900/50 shadow-lg" id="control-panel">
+                <h2 class="text-xs sm:text-sm font-bold text-purple-400 mb-3 uppercase tracking-wide">Configuration</h2>
+                
+                <!-- Mode Selector -->
+                <div class="mb-4">
+                    <label class="block text-xs text-gray-400 mb-1">Benchmark Mode</label>
+                    <select id="mode-select" class="mode-select w-full text-white text-sm py-2 px-3 rounded">
+                        <option value="cpu">CPU (Raytracing)</option>
+                        <option value="gpu">GPU (WebGL Fractal)</option>
+                    </select>
+                </div>
+
                 <button id="start-btn" class="btn-primary w-full text-white font-bold py-3 sm:py-4 px-6 rounded-md shadow-lg mb-3 text-base sm:text-lg transition-all duration-300">
-                    RUN EXTREME
+                    RUN BENCHMARK
                 </button>
-                <div id="status-text" class="text-xs sm:text-sm text-center text-purple-300 h-6 mb-2">Ready (HD / 12x AA)</div>
+                <div id="status-text" class="text-xs sm:text-sm text-center text-purple-300 h-6 mb-2">Ready</div>
                 
                 <!-- Share Area (Hidden initially) -->
                 <div id="share-area" class="hidden border-t border-gray-700 pt-4 mt-2 flex flex-col gap-2">
@@ -122,41 +135,15 @@
                 </div>
             </div>
 
-            <div class="bg-gray-900/80 p-4 sm:p-5 rounded-lg border border-purple-900/50 flex-grow flex flex-col shadow-lg">
-                <h2 class="text-xs sm:text-sm font-bold text-purple-400 mb-4 uppercase tracking-wide">Reference Scores</h2>
+            <div class="bg-gray-900/80 p-4 sm:p-5 rounded-lg border border-purple-900/50 flex-grow flex flex-col shadow-lg" id="score-panel">
+                <h2 class="text-xs sm:text-sm font-bold text-purple-400 mb-4 uppercase tracking-wide">Scores</h2>
                 
-                <div class="space-y-3 sm:space-y-4 text-xs sm:text-sm">
-                    <div class="flex justify-between items-center p-3 bg-purple-900/20 border border-purple-500/30 rounded-md">
-                        <span class="text-purple-100 font-medium">Your System</span>
-                        <span class="font-bold text-purple-400 text-lg sm:text-xl score-display" id="current-score">--</span>
-                    </div>
-                    
-                    <!-- Updated with Real User Data -->
-                    <div class="flex justify-between items-center p-3 bg-gray-800/50 rounded-md opacity-80">
-                        <div class="flex flex-col">
-                            <span class="font-medium text-gray-200">Xeon W-2133</span>
-                            <span class="text-[10px] sm:text-xs text-gray-500">Workstation 6C/12T</span>
-                        </div>
-                        <span class="font-mono text-purple-200 text-base sm:text-lg">14317 pts</span>
-                    </div>
-                    <div class="flex justify-between items-center p-3 bg-gray-800/50 rounded-md opacity-80">
-                        <div class="flex flex-col">
-                            <span class="font-medium text-gray-300">Celeron N4020</span>
-                            <span class="text-[10px] sm:text-xs text-gray-500">Entry Laptop 2C/2T</span>
-                        </div>
-                        <span class="font-mono text-gray-300">2722 pts</span>
-                    </div>
-                    <div class="flex justify-between items-center p-3 bg-gray-800/50 rounded-md opacity-80">
-                        <div class="flex flex-col">
-                            <span class="font-medium text-gray-400">Core i3-4020Y</span>
-                            <span class="text-[10px] sm:text-xs text-gray-500">Mobile Low Power 2C/4T</span>
-                        </div>
-                        <span class="font-mono text-gray-400">2130 pts</span>
-                    </div>
+                <div class="space-y-3 sm:space-y-4 text-xs sm:text-sm" id="score-list">
+                    <!-- Scores injected via JS -->
                 </div>
                 
                 <div class="mt-4 sm:mt-6 text-[10px] sm:text-xs text-gray-500 text-center border-t border-gray-800 pt-3">
-                     *Scores vary by browser engine
+                     *Scores vary by browser/driver
                 </div>
             </div>
         </div>
@@ -164,12 +151,11 @@
         <!-- Render Viewport (Right Panel) -->
         <div class="lg:col-span-3 order-1 lg:order-2">
             <div class="canvas-container rounded-lg border-2 border-purple-900/30 relative w-full aspect-video bg-black shadow-2xl" id="canvas-wrapper">
-                <canvas id="render-canvas" width="1280" height="720"></canvas>
-                <!-- Buckets will be injected here via JS -->
+                <!-- Canvas is dynamically injected here -->
             </div>
             
             <div class="mt-3 flex justify-between text-xs sm:text-sm text-gray-500 font-mono px-1">
-                <span id="resolution-info">Scene: 100 Spheres | Res: 1280x720 | 12x Samples</span>
+                <span id="resolution-info">Select Mode to Start</span>
                 <span id="time-info">Time: 0.00s</span>
             </div>
         </div>
@@ -177,8 +163,7 @@
 
     <!-- Footer -->
     <div class="mt-8 sm:mt-12 text-gray-500 text-xs sm:text-sm text-center pb-8">
-        <p>Warning: This benchmark places extreme load on your CPU.</p>
-        <p>Collision checks per frame: ~3.5 Billion.</p>
+        <p>Warning: This benchmark places heavy load on CPU or GPU.</p>
         
         <div class="mt-6 pt-6 border-t border-gray-800/50 w-2/3 mx-auto">
             <p class="text-purple-400 font-bold mb-1">About</p>
@@ -186,7 +171,7 @@
         </div>
     </div>
 
-    <!-- WORKER SCRIPT TEMPLATE -->
+    <!-- WORKER SCRIPT TEMPLATE (CPU) -->
     <script id="worker-code" type="javascript/worker">
         // Vector class
         class Vec3 {
@@ -202,11 +187,9 @@
             }
         }
 
-        // --- SCENE GENERATION (100 Objects) ---
         const spheres = [];
-        spheres.push({ c: new Vec3(0, 1, 0), r: 1, mat: 2, col: new Vec3(0.8, 0.8, 0.8) }); // Mirror
+        spheres.push({ c: new Vec3(0, 1, 0), r: 1, mat: 2, col: new Vec3(0.8, 0.8, 0.8) });
 
-        // Generate Grid of 100 Spheres
         for (let x = -5; x < 5; x++) {
             for (let z = -6; z < 4; z++) {
                 let r = 0.5 + 0.5 * Math.sin(x * 0.5);
@@ -214,121 +197,62 @@
                 let b = 0.5 + 0.5 * Math.cos((x+z) * 0.3);
                 let mat = ((x + z) % 5 === 0) ? 2 : 1;
                 let radius = 0.2 + 0.15 * Math.sin(x*z);
-
-                spheres.push({
-                    c: new Vec3(x * 1.2 + offset(z), radius, z * 1.2 - 2),
-                    r: radius,
-                    mat: mat,
-                    col: new Vec3(r, g, b)
-                });
+                spheres.push({c: new Vec3(x * 1.2 + Math.sin(z)*0.5, radius, z * 1.2 - 2),r: radius,mat: mat,col: new Vec3(r, g, b)});
             }
         }
-
-        function offset(v) { return Math.sin(v) * 0.5; }
-
         const lightDir = new Vec3(0.5, 1, -0.5).norm();
-
         function intersectSphere(ro, rd, s) {
             let oc = ro.sub(s.c);
             let b = oc.dot(rd);
             let c = oc.dot(oc) - s.r * s.r;
             let d = b * b - c;
-            if (d > 0) {
-                return -b - Math.sqrt(d);
-            }
+            if (d > 0) return -b - Math.sqrt(d);
             return Infinity;
         }
-
         function getBackground(rd) {
             let t = 0.5 * (rd.y + 1.0);
             return new Vec3(0.1, 0.1, 0.1).mul(1.0 - t).add(new Vec3(0.2, 0.1, 0.3).mul(t));
         }
-
         function trace(ro, rd, depth) {
-            let t = Infinity;
-            let id = -1;
-            
-            if (rd.y < -0.001) {
-                let tp = -ro.y / rd.y;
-                if (tp > 0 && tp < t) {
-                    t = tp;
-                    id = -2; // Floor ID
-                }
-            }
-
-            for (let i = 0; i < spheres.length; i++) {
-                let ts = intersectSphere(ro, rd, spheres[i]);
-                if (ts > 0.001 && ts < t) {
-                    t = ts;
-                    id = i;
-                }
-            }
-
+            let t = Infinity, id = -1;
+            if (rd.y < -0.001) { let tp = -ro.y / rd.y; if (tp > 0 && tp < t) { t = tp; id = -2; } }
+            for (let i = 0; i < spheres.length; i++) { let ts = intersectSphere(ro, rd, spheres[i]); if (ts > 0.001 && ts < t) { t = ts; id = i; } }
             if (t === Infinity) return getBackground(rd);
-
             let p = ro.add(rd.mul(t));
-            let n, col;
-            let isMirror = false;
-
+            let n, col, isMirror = false;
             if (id === -2) {
                 n = new Vec3(0, 1, 0);
                 let checker = (Math.floor(p.x*2) + Math.floor(p.z*2)) % 2 === 0;
                 col = checker ? new Vec3(0.15, 0.15, 0.15) : new Vec3(0.1, 0.1, 0.1);
                 if (!checker) isMirror = true; 
             } else {
-                let s = spheres[id];
-                n = p.sub(s.c).norm();
-                col = s.col;
-                if (s.mat === 2) isMirror = true;
+                let s = spheres[id]; n = p.sub(s.c).norm(); col = s.col; if (s.mat === 2) isMirror = true;
             }
-
             let shadow = 1.0;
             let shadowRayOrigin = p.add(n.mul(0.001));
-            
-            for (let i = 0; i < spheres.length; i++) {
-                if (id !== i) { 
-                    if (intersectSphere(shadowRayOrigin, lightDir, spheres[i]) < Infinity) {
-                        shadow = 0.1;
-                        break;
-                    }
-                }
-            }
-
+            for (let i = 0; i < spheres.length; i++) { if (id !== i) { if (intersectSphere(shadowRayOrigin, lightDir, spheres[i]) < Infinity) { shadow = 0.1; break; } } }
             let diff = Math.max(0, n.dot(lightDir));
             let finalCol = col.mul(diff * shadow + 0.05);
-
-            const MAX_DEPTH = 5; 
-            if (isMirror && depth < MAX_DEPTH) {
+            if (isMirror && depth < 5) {
                 let reflectDir = rd.sub(n.mul(2 * rd.dot(n))).norm();
                 let reflectCol = trace(p.add(n.mul(0.001)), reflectDir, depth + 1);
                 finalCol = finalCol.mul(0.2).add(reflectCol.mul(0.8));
             }
-
             return finalCol;
         }
-
         self.onmessage = function(e) {
             const { taskId, startX, startY, width, height, canvasWidth, canvasHeight } = e.data;
-            
-            const camPos = new Vec3(0, 3, -6);
-            const camTarget = new Vec3(0, 0, 0);
-            const camForward = camTarget.sub(camPos).norm();
-            const worldUp = new Vec3(0, 1, 0);
-            const camRight = worldUp.cross(camForward).norm();
-            const camUp = camForward.cross(camRight).norm();
-
+            const camPos = new Vec3(0, 3, -6), camTarget = new Vec3(0, 0, 0);
+            const camForward = camTarget.sub(camPos).norm(), worldUp = new Vec3(0, 1, 0);
+            const camRight = worldUp.cross(camForward).norm(), camUp = camForward.cross(camRight).norm();
             const pixelData = new Uint8ClampedArray(width * height * 4);
-            // SAMPLES increased to 12 for Extreme Load
             const SAMPLES = 12; 
-
             for (let y = 0; y < height; y++) {
                 for (let x = 0; x < width; x++) {
                     let r = 0, g = 0, b = 0;
                     for (let s = 0; s < SAMPLES; s++) {
-                        let offX = Math.random();
-                        let offY = Math.random();
-                        let u = ((startX + x + offX) / canvasWidth) * 2 - 1;
-                        let v = -(((startY + y + offY) / canvasHeight) * 2 - 1);
+                        let offX = Math.random(), offY = Math.random();
+                        let u = ((startX + x + offX) / canvasWidth) * 2 - 1, v = -(((startY + y + offY) / canvasHeight) * 2 - 1);
                         u *= (canvasWidth / canvasHeight);
                         let rd = camForward.add(camRight.mul(u)).add(camUp.mul(v)).norm();
                         let col = trace(camPos, rd, 0);
@@ -345,233 +269,512 @@
         };
     </script>
 
+    <!-- MAIN SCRIPT -->
     <script>
-        // --- Main Configuration ---
-        const BLOCK_SIZE = 64; 
-        const RENDER_WIDTH = 1280; // Increased Resolution to HD
-        const RENDER_HEIGHT = 720;
+        // --- Configuration ---
+        const CPU_RES_W = 1280;
+        const CPU_RES_H = 720;
+        const GPU_RES_W = 1920; // Higher res for GPU
+        const GPU_RES_H = 1080;
         
-        // --- DOM Elements ---
-        const canvas = document.getElementById('render-canvas');
-        const ctx = canvas.getContext('2d');
+        // --- Elements ---
         const startBtn = document.getElementById('start-btn');
         const statusText = document.getElementById('status-text');
         const coreCountDisplay = document.getElementById('core-count');
-        const scoreDisplay = document.getElementById('current-score');
         const timeDisplay = document.getElementById('time-info');
+        const resDisplay = document.getElementById('resolution-info');
         const canvasWrapper = document.getElementById('canvas-wrapper');
         const shareArea = document.getElementById('share-area');
         const copyBtn = document.getElementById('copy-btn');
         const cpuInput = document.getElementById('cpu-name-input');
+        const modeSelect = document.getElementById('mode-select');
+        const bodyApp = document.getElementById('body-app');
+        const scoreList = document.getElementById('score-list');
+
+        // Note: scoreDisplay needs to be updated when DOM changes, so we don't const it here.
+        let scoreDisplay;
 
         // --- State ---
+        let currentMode = 'cpu'; // 'cpu' or 'gpu'
+        let isRunning = false;
+        let finalScore = 0;
+        
+        // CPU State
         let workers = [];
-        let startTime;
+        let taskQueue = [];
         let completedBlocks = 0;
         let totalBlocks = 0;
-        let taskQueue = [];
-        let isRunning = false;
+        let cpuStartTime;
         let logicalProcessors = navigator.hardwareConcurrency || 4;
-        let finalScore = 0;
 
+        // GPU State
+        let gl;
+        let gpuStartTime;
+        let gpuFrameCount = 0;
+        let gpuAnimationId;
+        const GPU_TEST_DURATION_MS = 10000; // 10 seconds benchmark
+
+        // Init UI
         coreCountDisplay.textContent = `${logicalProcessors} Threads`;
-        
-        // --- Worker Management ---
-        const workerScript = document.getElementById('worker-code').textContent;
-        const blob = new Blob([workerScript], { type: 'text/javascript' });
-        const workerUrl = URL.createObjectURL(blob);
 
-        function initWorkers() {
-            workers.forEach(w => {
-                if (w.worker) w.worker.terminate();
-                if (w.bucketEl && w.bucketEl.parentNode) {
-                    w.bucketEl.parentNode.removeChild(w.bucketEl);
-                }
-            });
-            workers = [];
+        // --- Mode Switching ---
+        modeSelect.addEventListener('change', (e) => {
+            if (isRunning) return;
+            currentMode = e.target.value;
+            updateUITheme();
+        });
+
+        function updateUITheme() {
+            createCanvasElement(); // Reset canvas for new context
+            shareArea.classList.add('hidden');
+            
+            // Update Score List based on Mode
+            if (currentMode === 'cpu') {
+                bodyApp.classList.remove('mode-gpu');
+                statusText.textContent = "Ready (HD / 12x AA)";
+                resDisplay.textContent = "Scene: 100 Spheres | Res: 1280x720";
+                startBtn.textContent = "RUN CPU BENCHMARK";
+                
+                // CPU Reference Scores
+                scoreList.innerHTML = `
+                    <div class="flex justify-between items-center p-3 bg-purple-900/20 border border-purple-500/30 rounded-md">
+                        <span class="text-purple-100 font-medium">Your System</span>
+                        <span class="font-bold text-purple-400 text-lg sm:text-xl score-display" id="current-score">--</span>
+                    </div>
+                    <div class="flex justify-between items-center p-3 bg-gray-800/50 rounded-md opacity-80">
+                        <div class="flex flex-col">
+                            <span class="font-medium text-gray-200">Xeon W-2133</span>
+                            <span class="text-[10px] sm:text-xs text-gray-500">6C/12T Workstation</span>
+                        </div>
+                        <span class="font-mono text-purple-200 text-base sm:text-lg">14317 pts</span>
+                    </div>
+                    <div class="flex justify-between items-center p-3 bg-gray-800/50 rounded-md opacity-80">
+                        <div class="flex flex-col">
+                            <span class="font-medium text-gray-300">Celeron N4020</span>
+                            <span class="text-[10px] sm:text-xs text-gray-500">2C/2T Entry</span>
+                        </div>
+                        <span class="font-mono text-gray-300 text-base sm:text-lg">2722 pts</span>
+                    </div>
+                    <div class="flex justify-between items-center p-3 bg-gray-800/50 rounded-md opacity-80">
+                        <div class="flex flex-col">
+                            <span class="font-medium text-gray-400">Core i3-4020Y</span>
+                            <span class="text-[10px] sm:text-xs text-gray-500">2C/4T Mobile</span>
+                        </div>
+                        <span class="font-mono text-gray-400 text-base sm:text-lg">2130 pts</span>
+                    </div>
+                `;
+            } else {
+                bodyApp.classList.add('mode-gpu');
+                statusText.textContent = "Ready (Mandelbox Fractal)";
+                resDisplay.textContent = "Scene: 3D Fractal | Res: 1920x1080";
+                startBtn.textContent = "RUN GPU BENCHMARK";
+
+                // GPU Reference Scores
+                scoreList.innerHTML = `
+                    <div class="flex justify-between items-center p-3 bg-purple-900/20 border border-purple-500/30 rounded-md">
+                        <span class="text-purple-100 font-medium">Your System</span>
+                        <span class="font-bold text-purple-400 text-lg sm:text-xl score-display" id="current-score">--</span>
+                    </div>
+                    <div class="flex justify-between items-center p-3 bg-gray-800/50 rounded-md opacity-80">
+                        <div class="flex flex-col">
+                            <span class="font-medium text-gray-200">RTX 4090</span>
+                            <span class="text-[10px] sm:text-xs text-gray-500">High-End Desktop</span>
+                        </div>
+                        <span class="font-mono text-blue-200 text-base sm:text-lg">~80000 pts</span>
+                    </div>
+                    <div class="flex justify-between items-center p-3 bg-gray-800/50 rounded-md opacity-80">
+                        <div class="flex flex-col">
+                            <span class="font-medium text-gray-300">RTX 3060</span>
+                            <span class="text-[10px] sm:text-xs text-gray-500">Mid-Range Desktop</span>
+                        </div>
+                        <span class="font-mono text-blue-300 text-base sm:text-lg">~25000 pts</span>
+                    </div>
+                    <div class="flex justify-between items-center p-3 bg-gray-800/50 rounded-md opacity-80">
+                        <div class="flex flex-col">
+                            <span class="font-medium text-gray-400">iPhone 15 Pro</span>
+                            <span class="text-[10px] sm:text-xs text-gray-500">Mobile GPU</span>
+                        </div>
+                        <span class="font-mono text-gray-400 text-base sm:text-lg">~18000 pts</span>
+                    </div>
+                    <!-- Added User Data -->
+                    <div class="flex justify-between items-center p-3 bg-gray-800/50 rounded-md opacity-80">
+                        <div class="flex flex-col">
+                            <span class="font-medium text-gray-400">Intel HD 4200</span>
+                            <span class="text-[10px] sm:text-xs text-gray-500">Old Integrated</span>
+                        </div>
+                        <span class="font-mono text-gray-400 text-base sm:text-lg">1047 pts</span>
+                    </div>
+                `;
+            }
+            // Re-bind scoreDisplay since it was re-created
+            scoreDisplay = document.getElementById('current-score');
+        }
+
+        function createCanvasElement() {
+            canvasWrapper.innerHTML = '';
+            const c = document.createElement('canvas');
+            c.id = 'render-canvas';
+            // Set resolution based on mode
+            if (currentMode === 'cpu') {
+                c.width = CPU_RES_W;
+                c.height = CPU_RES_H;
+            } else {
+                c.width = GPU_RES_W;
+                c.height = GPU_RES_H;
+            }
+            canvasWrapper.appendChild(c);
+            return c;
+        }
+
+        // --- Main Runner ---
+        startBtn.addEventListener('click', () => {
+            if (isRunning) return;
+            isRunning = true;
+            startBtn.disabled = true;
+            modeSelect.disabled = true;
+            shareArea.classList.add('hidden');
+            scoreDisplay.textContent = "Running...";
+            
+            if (currentMode === 'cpu') {
+                runCpuBenchmark();
+            } else {
+                runGpuBenchmark();
+            }
+        });
+
+        // ==========================================
+        // CPU BENCHMARK LOGIC
+        // ==========================================
+        function runCpuBenchmark() {
+            const canvas = document.getElementById('render-canvas');
+            const ctx = canvas.getContext('2d');
+            
+            // Clear black
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, CPU_RES_W, CPU_RES_H);
+
+            // Setup Workers
+            workers.forEach(w => w.worker.terminate());
+            workers = []; // clear old workers
+            
+            // Re-init workers logic
+            const workerScript = document.getElementById('worker-code').textContent;
+            const blob = new Blob([workerScript], { type: 'text/javascript' });
+            const workerUrl = URL.createObjectURL(blob);
+            
+            // Remove old buckets
+            document.querySelectorAll('.bucket').forEach(el => el.remove());
 
             for (let i = 0; i < logicalProcessors; i++) {
-                const worker = new Worker(workerUrl);
-                worker.onmessage = handleWorkerMessage;
-                workers.push({
-                    id: i,
-                    worker: worker,
-                    busy: false,
-                    bucketEl: createBucketElement()
-                });
+                const w = new Worker(workerUrl);
+                const bucket = document.createElement('div');
+                bucket.className = 'bucket';
+                bucket.style.display = 'none';
+                canvasWrapper.appendChild(bucket);
+                
+                w.onmessage = handleCpuMessage;
+                workers.push({ id: i, worker: w, busy: false, bucketEl: bucket });
             }
+
+            // Tasks
+            taskQueue = [];
+            let id = 0;
+            const bs = 32;
+            const cx = CPU_RES_W / 2, cy = CPU_RES_H / 2;
+            for (let y = 0; y < CPU_RES_H; y += bs) {
+                for (let x = 0; x < CPU_RES_W; x += bs) {
+                    const w = Math.min(bs, CPU_RES_W - x);
+                    const h = Math.min(bs, CPU_RES_H - y);
+                    const distSq = (x + w/2 - cx)**2 + (y + h/2 - cy)**2;
+                    taskQueue.push({ id: id++, x, y, w, h, distSq });
+                }
+            }
+            taskQueue.sort((a, b) => a.distSq - b.distSq);
+            totalBlocks = taskQueue.length;
+            completedBlocks = 0;
+
+            cpuStartTime = performance.now();
+            statusText.textContent = "Raytracing on CPU...";
+            
+            workers.forEach(w => assignCpuTask(w));
+            requestAnimationFrame(updateCpuTimer);
         }
 
-        function createBucketElement() {
-            const div = document.createElement('div');
-            div.className = 'bucket';
-            div.style.display = 'none';
-            canvasWrapper.appendChild(div);
-            return div;
+        function assignCpuTask(wObj) {
+            if (taskQueue.length === 0) {
+                if (workers.every(w => !w.busy)) finishCpuBenchmark();
+                return;
+            }
+            const t = taskQueue.shift();
+            wObj.busy = true;
+            wObj.currentTask = t.id;
+            
+            // Visual Bucket
+            const xPct = (t.x / CPU_RES_W) * 100;
+            const yPct = (t.y / CPU_RES_H) * 100;
+            const wPct = (t.w / CPU_RES_W) * 100;
+            const hPct = (t.h / CPU_RES_H) * 100;
+            wObj.bucketEl.style.left = `${xPct}%`;
+            wObj.bucketEl.style.top = `${yPct}%`;
+            wObj.bucketEl.style.width = `${wPct}%`;
+            wObj.bucketEl.style.height = `${hPct}%`;
+            wObj.bucketEl.style.display = 'block';
+
+            wObj.worker.postMessage({
+                taskId: t.id, startX: t.x, startY: t.y, width: t.w, height: t.h, canvasWidth: CPU_RES_W, canvasHeight: CPU_RES_H
+            });
         }
 
-        function handleWorkerMessage(e) {
+        function handleCpuMessage(e) {
             const { taskId, pixelData, startX, startY, width, height } = e.data;
-            const imageData = new ImageData(pixelData, width, height);
-            ctx.putImageData(imageData, startX, startY);
-
-            const workerObj = workers.find(w => w.busy && w.currentTask === taskId);
-            if (workerObj) {
-                workerObj.busy = false;
-                workerObj.bucketEl.style.display = 'none';
-                assignTask(workerObj);
+            const canvas = document.getElementById('render-canvas');
+            const ctx = canvas.getContext('2d');
+            const imgData = new ImageData(pixelData, width, height);
+            ctx.putImageData(imgData, startX, startY);
+            
+            const wObj = workers.find(w => w.busy && w.currentTask === taskId);
+            if (wObj) {
+                wObj.busy = false;
+                wObj.bucketEl.style.display = 'none';
+                assignCpuTask(wObj);
             }
             completedBlocks++;
         }
 
-        function assignTask(workerObj) {
-            if (taskQueue.length === 0) {
-                if (workers.every(w => !w.busy)) {
-                    finishBenchmark();
-                }
-                return;
-            }
-
-            const task = taskQueue.shift();
-            workerObj.busy = true;
-            workerObj.currentTask = task.id;
-
-            const xPct = (task.x / RENDER_WIDTH) * 100;
-            const yPct = (task.y / RENDER_HEIGHT) * 100;
-            const wPct = (task.w / RENDER_WIDTH) * 100;
-            const hPct = (task.h / RENDER_HEIGHT) * 100;
-
-            workerObj.bucketEl.style.left = `${xPct}%`;
-            workerObj.bucketEl.style.top = `${yPct}%`;
-            workerObj.bucketEl.style.width = `${wPct}%`;
-            workerObj.bucketEl.style.height = `${hPct}%`;
-            workerObj.bucketEl.style.display = 'block';
-
-            workerObj.worker.postMessage({
-                taskId: task.id,
-                startX: task.x,
-                startY: task.y,
-                width: task.w,
-                height: task.h,
-                canvasWidth: RENDER_WIDTH,
-                canvasHeight: RENDER_HEIGHT
-            });
-        }
-
-        function generateTasks() {
-            taskQueue = [];
-            let id = 0;
-            const bs = 32; 
-            const centerX = RENDER_WIDTH / 2;
-            const centerY = RENDER_HEIGHT / 2;
-
-            for (let y = 0; y < RENDER_HEIGHT; y += bs) {
-                for (let x = 0; x < RENDER_WIDTH; x += bs) {
-                    const w = Math.min(bs, RENDER_WIDTH - x);
-                    const h = Math.min(bs, RENDER_HEIGHT - y);
-                    
-                    // Calculate distance from center for Spiral/Center-out rendering
-                    const bx = x + w/2;
-                    const by = y + h/2;
-                    const distSq = (bx - centerX) ** 2 + (by - centerY) ** 2;
-
-                    taskQueue.push({ id: id++, x, y, w, h, distSq });
-                }
-            }
-            totalBlocks = taskQueue.length;
-            
-            // Sort tasks by distance from center (Center-out)
-            taskQueue.sort((a, b) => a.distSq - b.distSq);
-        }
-
-        function startBenchmark() {
-            if (isRunning) return;
-            isRunning = true;
-            startBtn.disabled = true;
-            shareArea.classList.add('hidden'); // Hide share buttons on new run
-            statusText.textContent = "Crunching Numbers...";
-            scoreDisplay.textContent = "--";
-            
-            ctx.fillStyle = '#000';
-            ctx.fillRect(0, 0, RENDER_WIDTH, RENDER_HEIGHT);
-
-            initWorkers();
-            generateTasks();
-            completedBlocks = 0;
-            startTime = performance.now();
-
-            workers.forEach(w => assignTask(w));
-            requestAnimationFrame(updateTimer);
-        }
-
-        function updateTimer() {
-            if (!isRunning) return;
-            const now = performance.now();
-            const elapsed = (now - startTime) / 1000;
+        function updateCpuTimer() {
+            if (!isRunning || currentMode !== 'cpu') return;
+            const elapsed = (performance.now() - cpuStartTime) / 1000;
             timeDisplay.textContent = `Time: ${elapsed.toFixed(2)}s`;
-            requestAnimationFrame(updateTimer);
+            statusText.textContent = `CPU Processing... (${Math.floor(completedBlocks/totalBlocks*100)}%)`;
+            requestAnimationFrame(updateCpuTimer);
         }
 
-        function finishBenchmark() {
+        function finishCpuBenchmark() {
             isRunning = false;
-            const endTime = performance.now();
-            const durationSec = (endTime - startTime) / 1000;
-            
-            const totalPixels = RENDER_WIDTH * RENDER_HEIGHT;
-            // Increased load weight for Ludicrous+ settings
-            const loadWeight = 75; 
-            const pps = totalPixels / durationSec;
-            finalScore = Math.floor(pps / 10 * loadWeight / 100); 
-
-            scoreDisplay.textContent = `${finalScore} pts`;
-            statusText.textContent = "Benchmark Complete";
             startBtn.disabled = false;
-            startBtn.textContent = "RUN AGAIN";
+            modeSelect.disabled = false;
+            const dur = (performance.now() - cpuStartTime) / 1000;
+            const pixels = CPU_RES_W * CPU_RES_H;
+            const loadWeight = 75;
+            const pps = pixels / dur;
+            finalScore = Math.floor(pps / 10 * loadWeight / 100);
             
-            // Show Share Buttons
+            scoreDisplay.textContent = `${finalScore} pts`;
+            statusText.textContent = "CPU Benchmark Complete";
+            startBtn.textContent = "RUN AGAIN";
             shareArea.classList.remove('hidden');
         }
 
-        copyBtn.addEventListener('click', () => {
-            const cpuName = cpuInput.value || "Unknown CPU";
-            const text = `WebBench Score: ${finalScore} pts (${logicalProcessors} Threads / ${cpuName}) - Ludicrous+ Mode`;
+        // ==========================================
+        // GPU BENCHMARK LOGIC (WebGL)
+        // ==========================================
+        const fsSource = `
+            precision highp float;
+            uniform vec2 u_resolution;
+            uniform float u_time;
             
-            // Fallback for iframe restrictions using document.execCommand
+            // Mandelbox Params
+            const int MAX_ITER = 64; // Heavy iteration for stress
+            const float SCALE = 2.8;
+            
+            float sphereSDF(vec3 p) {
+                return length(p) - 1.0;
+            }
+            
+            // Standard Mandelbox DE
+            float mandelbox(vec3 p) {
+                vec3 z = p;
+                float dr = 1.0;
+                for (int i=0; i<12; i++) { // Iteration depth
+                    if (z.x > 1.0) z.x = 2.0 - z.x; else if (z.x < -1.0) z.x = -2.0 - z.x;
+                    if (z.y > 1.0) z.y = 2.0 - z.y; else if (z.y < -1.0) z.y = -2.0 - z.y;
+                    if (z.z > 1.0) z.z = 2.0 - z.z; else if (z.z < -1.0) z.z = -2.0 - z.z;
+                    
+                    float r2 = dot(z,z);
+                    if (r2 < 0.25) { z *= 4.0; dr *= 4.0; }
+                    else if (r2 < 1.0) { z /= r2; dr /= r2; }
+                    
+                    z = z * SCALE + p;
+                    dr = dr * abs(SCALE) + 1.0;
+                }
+                return (length(z) - 0.0) / abs(dr);
+            }
+
+            float map(vec3 p) {
+                return mandelbox(p);
+            }
+
+            vec3 getNormal(vec3 p) {
+                float d = map(p);
+                vec2 e = vec2(0.001, 0.0);
+                return normalize(vec3(d - map(p - e.xyy), d - map(p - e.yxy), d - map(p - e.yyx)));
+            }
+
+            void main() {
+                vec2 uv = (gl_FragCoord.xy * 2.0 - u_resolution) / min(u_resolution.x, u_resolution.y);
+                
+                // Camera rotation for animation
+                float t = u_time * 0.2;
+                vec3 ro = vec3(3.5 * sin(t), 3.0 * cos(t*0.7), 3.5 * cos(t));
+                vec3 ta = vec3(0.0);
+                vec3 fwd = normalize(ta - ro);
+                vec3 right = normalize(cross(fwd, vec3(0.0, 1.0, 0.0)));
+                vec3 up = cross(right, fwd);
+                vec3 rd = normalize(fwd + right * uv.x + up * uv.y);
+
+                float dist = 0.0;
+                float t_march = 0.0;
+                vec3 p;
+                int steps = 0;
+                
+                // Raymarching
+                for (int i=0; i<MAX_ITER; i++) {
+                    p = ro + rd * t_march;
+                    dist = map(p);
+                    if (dist < 0.001 || t_march > 20.0) break;
+                    t_march += dist;
+                    steps = i;
+                }
+
+                vec3 color = vec3(0.0);
+                if (t_march < 20.0) {
+                    vec3 n = getNormal(p);
+                    vec3 light = normalize(vec3(1.0, 2.0, -1.0));
+                    float diff = max(dot(n, light), 0.0);
+                    
+                    // Coloring based on iteration count and position
+                    float glow = float(steps) / float(MAX_ITER);
+                    color = vec3(0.1, 0.5, 1.0) * diff;
+                    color += vec3(1.0, 0.4, 0.2) * glow * 1.5;
+                } else {
+                    // Background
+                    color = vec3(0.05, 0.05, 0.1);
+                }
+
+                gl_FragColor = vec4(color, 1.0);
+            }
+        `;
+
+        const vsSource = `
+            attribute vec4 aVertexPosition;
+            void main() { gl_Position = aVertexPosition; }
+        `;
+
+        function runGpuBenchmark() {
+            const canvas = document.getElementById('render-canvas');
+            gl = canvas.getContext('webgl');
+            if (!gl) {
+                alert('WebGL not supported');
+                isRunning = false;
+                startBtn.disabled = false;
+                modeSelect.disabled = false;
+                return;
+            }
+
+            // Shader Compile
+            const vs = loadShader(gl, gl.VERTEX_SHADER, vsSource);
+            const fs = loadShader(gl, gl.FRAGMENT_SHADER, fsSource);
+            const program = gl.createProgram();
+            gl.attachShader(program, vs);
+            gl.attachShader(program, fs);
+            gl.linkProgram(program);
+
+            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                console.error(gl.getProgramInfoLog(program));
+                return;
+            }
+
+            const positionBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+            const positions = [-1.0, 1.0, 1.0, 1.0, -1.0, -1.0, 1.0, -1.0];
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
+
+            const vertexPosition = gl.getAttribLocation(program, 'aVertexPosition');
+            gl.enableVertexAttribArray(vertexPosition);
+            gl.vertexAttribPointer(vertexPosition, 2, gl.FLOAT, false, 0, 0);
+
+            gl.useProgram(program);
+
+            const uRes = gl.getUniformLocation(program, 'u_resolution');
+            const uTime = gl.getUniformLocation(program, 'u_time');
+            
+            gl.uniform2f(uRes, canvas.width, canvas.height);
+
+            gpuStartTime = performance.now();
+            gpuFrameCount = 0;
+            statusText.textContent = "Stressing GPU (10s)...";
+            
+            function render(now) {
+                if (!isRunning) return;
+                
+                // Check duration
+                const elapsed = now - gpuStartTime;
+                timeDisplay.textContent = `Time: ${(elapsed/1000).toFixed(2)}s / 10.00s`;
+
+                if (elapsed > GPU_TEST_DURATION_MS) {
+                    finishGpuBenchmark(elapsed);
+                    return;
+                }
+
+                gl.uniform1f(uTime, elapsed / 1000.0);
+                gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+                
+                gpuFrameCount++;
+                gpuAnimationId = requestAnimationFrame(render);
+            }
+            gpuAnimationId = requestAnimationFrame(render);
+        }
+
+        function loadShader(gl, type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error(gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader);
+                return null;
+            }
+            return shader;
+        }
+
+        function finishGpuBenchmark(durationMs) {
+            isRunning = false;
+            startBtn.disabled = false;
+            modeSelect.disabled = false;
+            
+            const durationSec = durationMs / 1000;
+            const avgFps = gpuFrameCount / durationSec;
+            
+            // Score Calc: FPS * Resolution Factor
+            // 60FPS at 1080p is baseline nice score.
+            // Let's multiply to get "points"
+            finalScore = Math.floor(avgFps * 350); 
+            
+            scoreDisplay.textContent = `${finalScore} pts`;
+            statusText.textContent = `GPU Finished: Avg ${Math.floor(avgFps)} FPS`;
+            startBtn.textContent = "RUN AGAIN";
+            shareArea.classList.remove('hidden');
+        }
+
+        // --- Copy Func ---
+        copyBtn.addEventListener('click', () => {
+            const cpuName = cpuInput.value || "Unknown Device";
+            const modeName = currentMode === 'cpu' ? 'CPU (Ludicrous+)' : 'GPU (Mandelbox)';
+            const text = `WebBench Score: ${finalScore} pts [${modeName}] - ${cpuName}`;
+            
             const textArea = document.createElement("textarea");
             textArea.value = text;
-            textArea.style.position = "fixed";  // Avoid scrolling to bottom
+            textArea.style.position = "fixed";
             document.body.appendChild(textArea);
             textArea.focus();
             textArea.select();
-            
-            try {
-                const successful = document.execCommand('copy');
-                if(successful) {
-                    const originalText = copyBtn.textContent;
-                    copyBtn.textContent = "Copied!";
-                    setTimeout(() => copyBtn.textContent = originalText, 2000);
-                } else {
-                    console.error('Copy command failed');
-                }
-            } catch (err) {
-                console.error('Fallback: Oops, unable to copy', err);
-            }
-            
+            try { document.execCommand('copy'); 
+                const orig = copyBtn.textContent; copyBtn.textContent = "Copied!"; setTimeout(()=>copyBtn.textContent=orig, 2000);
+            } catch (e) {}
             document.body.removeChild(textArea);
         });
 
-        // --- Event Listeners ---
-        startBtn.addEventListener('click', startBenchmark);
-
-        // Initial Clear
-        ctx.fillStyle = '#0f0f13';
-        ctx.fillRect(0, 0, RENDER_WIDTH, RENDER_HEIGHT);
-        ctx.fillStyle = '#9333ea';
-        ctx.font = '30px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText("EXTREME MODE", RENDER_WIDTH/2, RENDER_HEIGHT/2);
-
+        updateUITheme(); // Init
     </script>
 </body>
 </html>
