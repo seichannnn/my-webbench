@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebBench - CPU Raytracing (Ludicrous)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background-color: #0f0f13;
+            color: #e0e0e0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .canvas-container {
+            box-shadow: 0 0 30px rgba(147, 51, 234, 0.3);
+            background-color: #000;
+            line-height: 0;
+            position: relative;
+            overflow: hidden;
+        }
+        canvas {
+            width: 100%;
+            height: auto;
+        }
+        /* バケット（レンダリング中の四角い枠） */
+        .bucket {
+            position: absolute;
+            border: 1px solid #d946ef; /* 紫/ピンク系 */
+            background-color: rgba(217, 70, 239, 0.2);
+            pointer-events: none;
+            z-index: 10;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #9333ea 0%, #7e22ce 100%);
+            transition: all 0.2s;
+        }
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 15px rgba(147, 51, 234, 0.4);
+            filter: brightness(1.1);
+        }
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            filter: grayscale(0.8);
+        }
+        .score-display {
+            font-variant-numeric: tabular-nums;
+        }
+        .badge-ludicrous {
+            background-color: #9333ea;
+            color: white;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.7em;
+            vertical-align: middle;
+            margin-left: 8px;
+            text-transform: uppercase;
+            font-weight: bold;
+            box-shadow: 0 0 10px rgba(147, 51, 234, 0.5);
+        }
+        /* Share Buttons */
+        .btn-copy {
+            background-color: #374151;
+            transition: all 0.2s;
+        }
+        .btn-copy:hover {
+            background-color: #4b5563;
+        }
+        /* CPU Input */
+        .cpu-input {
+            background-color: rgba(31, 41, 55, 0.5);
+            border: 1px solid rgba(75, 85, 99, 0.5);
+            color: #d1d5db;
+            transition: all 0.2s;
+        }
+        .cpu-input:focus {
+            outline: none;
+            border-color: #9333ea;
+            background-color: rgba(31, 41, 55, 0.8);
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-center p-4">
+
+    <!-- Header -->
+    <div class="w-full max-w-4xl flex justify-between items-end mb-4 border-b border-purple-900/50 pb-2">
+        <div>
+            <h1 class="text-3xl font-bold text-white tracking-wider">WEBBENCH <span class="text-purple-400 text-sm align-top">Ludicrous</span></h1>
+            <p class="text-purple-300/60 text-xs">JavaScript CPU Stress Test <span class="badge-ludicrous">MAXIMUM LOAD</span></p>
+        </div>
+        <div class="text-right flex flex-col items-end gap-1">
+            <div class="text-purple-300/60 text-sm">System Info</div>
+            <div class="text-xl font-bold text-white leading-none" id="core-count">--</div>
+            <!-- CPU Name Input Field -->
+            <input type="text" id="cpu-name-input" class="cpu-input text-xs px-2 py-1 rounded text-right w-48 mt-1" placeholder="Enter CPU Name">
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="w-full max-w-4xl grid grid-cols-1 md:grid-cols-4 gap-6">
+        
+        <!-- Controls & Results (Left Panel) -->
+        <div class="md:col-span-1 flex flex-col gap-4 order-2 md:order-1">
+            <div class="bg-gray-900/80 p-4 rounded-lg border border-purple-900/50">
+                <h2 class="text-sm font-bold text-purple-400 mb-2 uppercase">Actions</h2>
+                <button id="start-btn" class="btn-primary w-full text-white font-bold py-3 px-4 rounded shadow-lg mb-2">
+                    RUN LUDICROUS
+                </button>
+                <div id="status-text" class="text-xs text-center text-purple-300 h-4 mb-2">Ready (100 Objects)</div>
+                
+                <!-- Share Area (Hidden initially) -->
+                <div id="share-area" class="hidden border-t border-gray-700 pt-3 mt-2 flex flex-col gap-2">
+                    <button id="copy-btn" class="btn-copy w-full text-white font-bold py-2 px-3 rounded text-sm">
+                        Copy Result
+                    </button>
+                </div>
+            </div>
+
+            <div class="bg-gray-900/80 p-4 rounded-lg border border-purple-900/50 flex-grow flex flex-col">
+                <h2 class="text-sm font-bold text-purple-400 mb-4 uppercase">Reference Scores</h2>
+                
+                <div class="space-y-3 text-sm">
+                    <div class="flex justify-between items-center p-2 bg-purple-900/20 border border-purple-500/30 rounded">
+                        <span class="text-purple-100">Your System</span>
+                        <span class="font-bold text-purple-400 text-lg score-display" id="current-score">--</span>
+                    </div>
+                    
+                    <!-- Updated with Real User Data -->
+                    <div class="flex justify-between items-center p-2 bg-gray-800/50 rounded opacity-60">
+                        <span title="Workstation 6C/12T (Chrome Optimized)">Xeon W-2133</span>
+                        <span class="font-mono text-purple-200">14317 pts</span>
+                    </div>
+                    <div class="flex justify-between items-center p-2 bg-gray-800/50 rounded opacity-60">
+                        <span title="Entry Laptop 2C/2T">Celeron N4020</span>
+                        <span class="font-mono text-gray-300">2722 pts</span>
+                    </div>
+                    <div class="flex justify-between items-center p-2 bg-gray-800/50 rounded opacity-60">
+                        <span title="Mobile Ultra-Low Power 2C/4T">Core i3-4020Y</span>
+                        <span class="font-mono text-gray-400">2130 pts</span>
+                    </div>
+                </div>
+                
+                <div class="mt-4 text-xs text-gray-500 text-center border-t border-gray-800 pt-2">
+                     *Scores vary by browser engine
+                </div>
+            </div>
+        </div>
+
+        <!-- Render Viewport (Right Panel) -->
+        <div class="md:col-span-3 order-1 md:order-2">
+            <div class="canvas-container rounded-lg border-2 border-purple-900/30 relative w-full aspect-video bg-black" id="canvas-wrapper">
+                <canvas id="render-canvas" width="960" height="540"></canvas>
+                <!-- Buckets will be injected here via JS -->
+            </div>
+            
+            <div class="mt-2 flex justify-between text-xs text-gray-500 font-mono">
+                <span id="resolution-info">Scene: 100 Spheres | Res: 960x540 | 8x Samples</span>
+                <span id="time-info">Time: 0.00s</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="mt-8 text-gray-600 text-xs text-center">
+        <p>Warning: This benchmark places extreme load on your CPU.</p>
+        <p>Collision checks per frame: ~2 Billion.</p>
+    </div>
+
+    <!-- WORKER SCRIPT TEMPLATE -->
+    <script id="worker-code" type="javascript/worker">
+        // Vector class
+        class Vec3 {
+            constructor(x, y, z) { this.x = x; this.y = y; this.z = z; }
+            add(v) { return new Vec3(this.x + v.x, this.y + v.y, this.z + v.z); }
+            sub(v) { return new Vec3(this.x - v.x, this.y - v.y, this.z - v.z); }
+            mul(s) { return new Vec3(this.x * s, this.y * s, this.z * s); }
+            dot(v) { return this.x * v.x + this.y * v.y + this.z * v.z; }
+            cross(v) { return new Vec3(this.y*v.z - this.z*v.y, this.z*v.x - this.x*v.z, this.x*v.y - this.y*v.x); }
+            norm() { 
+                let m = Math.sqrt(this.x*this.x + this.y*this.y + this.z*this.z); 
+                return m === 0 ? new Vec3(0,0,0) : new Vec3(this.x/m, this.y/m, this.z/m); 
+            }
+        }
+
+        // --- SCENE GENERATION (100 Objects) ---
+        const spheres = [];
+        spheres.push({ c: new Vec3(0, 1, 0), r: 1, mat: 2, col: new Vec3(0.8, 0.8, 0.8) }); // Mirror
+
+        // Generate Grid of 100 Spheres
+        for (let x = -5; x < 5; x++) {
+            for (let z = -6; z < 4; z++) {
+                let r = 0.5 + 0.5 * Math.sin(x * 0.5);
+                let g = 0.5 + 0.5 * Math.sin(z * 0.5);
+                let b = 0.5 + 0.5 * Math.cos((x+z) * 0.3);
+                let mat = ((x + z) % 5 === 0) ? 2 : 1;
+                let radius = 0.2 + 0.15 * Math.sin(x*z);
+
+                spheres.push({
+                    c: new Vec3(x * 1.2 + offset(z), radius, z * 1.2 - 2),
+                    r: radius,
+                    mat: mat,
+                    col: new Vec3(r, g, b)
+                });
+            }
+        }
+
+        function offset(v) { return Math.sin(v) * 0.5; }
+
+        const lightDir = new Vec3(0.5, 1, -0.5).norm();
+
+        function intersectSphere(ro, rd, s) {
+            let oc = ro.sub(s.c);
+            let b = oc.dot(rd);
+            let c = oc.dot(oc) - s.r * s.r;
+            let d = b * b - c;
+            if (d > 0) {
+                return -b - Math.sqrt(d);
+            }
+            return Infinity;
+        }
+
+        function getBackground(rd) {
+            let t = 0.5 * (rd.y + 1.0);
+            return new Vec3(0.1, 0.1, 0.1).mul(1.0 - t).add(new Vec3(0.2, 0.1, 0.3).mul(t));
+        }
+
+        function trace(ro, rd, depth) {
+            let t = Infinity;
+            let id = -1;
+            
+            if (rd.y < -0.001) {
+                let tp = -ro.y / rd.y;
+                if (tp > 0 && tp < t) {
+                    t = tp;
+                    id = -2; // Floor ID
+                }
+            }
+
+            for (let i = 0; i < spheres.length; i++) {
+                let ts = intersectSphere(ro, rd, spheres[i]);
+                if (ts > 0.001 && ts < t) {
+                    t = ts;
+                    id = i;
+                }
+            }
+
+            if (t === Infinity) return getBackground(rd);
+
+            let p = ro.add(rd.mul(t));
+            let n, col;
+            let isMirror = false;
+
+            if (id === -2) {
+                n = new Vec3(0, 1, 0);
+                let checker = (Math.floor(p.x*2) + Math.floor(p.z*2)) % 2 === 0;
+                col = checker ? new Vec3(0.15, 0.15, 0.15) : new Vec3(0.1, 0.1, 0.1);
+                if (!checker) isMirror = true; 
+            } else {
+                let s = spheres[id];
+                n = p.sub(s.c).norm();
+                col = s.col;
+                if (s.mat === 2) isMirror = true;
+            }
+
+            let shadow = 1.0;
+            let shadowRayOrigin = p.add(n.mul(0.001));
+            
+            for (let i = 0; i < spheres.length; i++) {
+                if (id !== i) { 
+                    if (intersectSphere(shadowRayOrigin, lightDir, spheres[i]) < Infinity) {
+                        shadow = 0.1;
+                        break;
+                    }
+                }
+            }
+
+            let diff = Math.max(0, n.dot(lightDir));
+            let finalCol = col.mul(diff * shadow + 0.05);
+
+            const MAX_DEPTH = 5; 
+            if (isMirror && depth < MAX_DEPTH) {
+                let reflectDir = rd.sub(n.mul(2 * rd.dot(n))).norm();
+                let reflectCol = trace(p.add(n.mul(0.001)), reflectDir, depth + 1);
+                finalCol = finalCol.mul(0.2).add(reflectCol.mul(0.8));
+            }
+
+            return finalCol;
+        }
+
+        self.onmessage = function(e) {
+            const { taskId, startX, startY, width, height, canvasWidth, canvasHeight } = e.data;
+            
+            const camPos = new Vec3(0, 3, -6);
+            const camTarget = new Vec3(0, 0, 0);
+            const camForward = camTarget.sub(camPos).norm();
+            const worldUp = new Vec3(0, 1, 0);
+            const camRight = worldUp.cross(camForward).norm();
+            const camUp = camForward.cross(camRight).norm();
+
+            const pixelData = new Uint8ClampedArray(width * height * 4);
+            const SAMPLES = 8; 
+
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    let r = 0, g = 0, b = 0;
+                    for (let s = 0; s < SAMPLES; s++) {
+                        let offX = Math.random();
+                        let offY = Math.random();
+                        let u = ((startX + x + offX) / canvasWidth) * 2 - 1;
+                        let v = -(((startY + y + offY) / canvasHeight) * 2 - 1);
+                        u *= (canvasWidth / canvasHeight);
+                        let rd = camForward.add(camRight.mul(u)).add(camUp.mul(v)).norm();
+                        let col = trace(camPos, rd, 0);
+                        r += col.x; g += col.y; b += col.z;
+                    }
+                    let idx = (y * width + x) * 4;
+                    pixelData[idx] = Math.min(255, Math.floor((r / SAMPLES) * 255));
+                    pixelData[idx + 1] = Math.min(255, Math.floor((g / SAMPLES) * 255));
+                    pixelData[idx + 2] = Math.min(255, Math.floor((b / SAMPLES) * 255));
+                    pixelData[idx + 3] = 255;
+                }
+            }
+            self.postMessage({ taskId, pixelData, startX, startY, width, height }, [pixelData.buffer]);
+        };
+    </script>
+
+    <script>
+        // --- Main Configuration ---
+        const BLOCK_SIZE = 64; 
+        const RENDER_WIDTH = 960; 
+        const RENDER_HEIGHT = 540;
+        
+        // --- DOM Elements ---
+        const canvas = document.getElementById('render-canvas');
+        const ctx = canvas.getContext('2d');
+        const startBtn = document.getElementById('start-btn');
+        const statusText = document.getElementById('status-text');
+        const coreCountDisplay = document.getElementById('core-count');
+        const scoreDisplay = document.getElementById('current-score');
+        const timeDisplay = document.getElementById('time-info');
+        const canvasWrapper = document.getElementById('canvas-wrapper');
+        const shareArea = document.getElementById('share-area');
+        const copyBtn = document.getElementById('copy-btn');
+        const cpuInput = document.getElementById('cpu-name-input');
+
+        // --- State ---
+        let workers = [];
+        let startTime;
+        let completedBlocks = 0;
+        let totalBlocks = 0;
+        let taskQueue = [];
+        let isRunning = false;
+        let logicalProcessors = navigator.hardwareConcurrency || 4;
+        let finalScore = 0;
+
+        coreCountDisplay.textContent = `${logicalProcessors} Threads`;
+        
+        // --- Worker Management ---
+        const workerScript = document.getElementById('worker-code').textContent;
+        const blob = new Blob([workerScript], { type: 'text/javascript' });
+        const workerUrl = URL.createObjectURL(blob);
+
+        function initWorkers() {
+            workers.forEach(w => {
+                if (w.worker) w.worker.terminate();
+                if (w.bucketEl && w.bucketEl.parentNode) {
+                    w.bucketEl.parentNode.removeChild(w.bucketEl);
+                }
+            });
+            workers = [];
+
+            for (let i = 0; i < logicalProcessors; i++) {
+                const worker = new Worker(workerUrl);
+                worker.onmessage = handleWorkerMessage;
+                workers.push({
+                    id: i,
+                    worker: worker,
+                    busy: false,
+                    bucketEl: createBucketElement()
+                });
+            }
+        }
+
+        function createBucketElement() {
+            const div = document.createElement('div');
+            div.className = 'bucket';
+            div.style.display = 'none';
+            canvasWrapper.appendChild(div);
+            return div;
+        }
+
+        function handleWorkerMessage(e) {
+            const { taskId, pixelData, startX, startY, width, height } = e.data;
+            const imageData = new ImageData(pixelData, width, height);
+            ctx.putImageData(imageData, startX, startY);
+
+            const workerObj = workers.find(w => w.busy && w.currentTask === taskId);
+            if (workerObj) {
+                workerObj.busy = false;
+                workerObj.bucketEl.style.display = 'none';
+                assignTask(workerObj);
+            }
+            completedBlocks++;
+        }
+
+        function assignTask(workerObj) {
+            if (taskQueue.length === 0) {
+                if (workers.every(w => !w.busy)) {
+                    finishBenchmark();
+                }
+                return;
+            }
+
+            const task = taskQueue.shift();
+            workerObj.busy = true;
+            workerObj.currentTask = task.id;
+
+            const xPct = (task.x / RENDER_WIDTH) * 100;
+            const yPct = (task.y / RENDER_HEIGHT) * 100;
+            const wPct = (task.w / RENDER_WIDTH) * 100;
+            const hPct = (task.h / RENDER_HEIGHT) * 100;
+
+            workerObj.bucketEl.style.left = `${xPct}%`;
+            workerObj.bucketEl.style.top = `${yPct}%`;
+            workerObj.bucketEl.style.width = `${wPct}%`;
+            workerObj.bucketEl.style.height = `${hPct}%`;
+            workerObj.bucketEl.style.display = 'block';
+
+            workerObj.worker.postMessage({
+                taskId: task.id,
+                startX: task.x,
+                startY: task.y,
+                width: task.w,
+                height: task.h,
+                canvasWidth: RENDER_WIDTH,
+                canvasHeight: RENDER_HEIGHT
+            });
+        }
+
+        function generateTasks() {
+            taskQueue = [];
+            let id = 0;
+            const bs = 32; 
+            for (let y = 0; y < RENDER_HEIGHT; y += bs) {
+                for (let x = 0; x < RENDER_WIDTH; x += bs) {
+                    const w = Math.min(bs, RENDER_WIDTH - x);
+                    const h = Math.min(bs, RENDER_HEIGHT - y);
+                    taskQueue.push({ id: id++, x, y, w, h });
+                }
+            }
+            totalBlocks = taskQueue.length;
+            taskQueue.sort(() => Math.random() - 0.5);
+        }
+
+        function startBenchmark() {
+            if (isRunning) return;
+            isRunning = true;
+            startBtn.disabled = true;
+            shareArea.classList.add('hidden'); // Hide share buttons on new run
+            statusText.textContent = "Crunching Numbers...";
+            scoreDisplay.textContent = "--";
+            
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, RENDER_WIDTH, RENDER_HEIGHT);
+
+            initWorkers();
+            generateTasks();
+            completedBlocks = 0;
+            startTime = performance.now();
+
+            workers.forEach(w => assignTask(w));
+            requestAnimationFrame(updateTimer);
+        }
+
+        function updateTimer() {
+            if (!isRunning) return;
+            const now = performance.now();
+            const elapsed = (now - startTime) / 1000;
+            timeDisplay.textContent = `Time: ${elapsed.toFixed(2)}s`;
+            requestAnimationFrame(updateTimer);
+        }
+
+        function finishBenchmark() {
+            isRunning = false;
+            const endTime = performance.now();
+            const durationSec = (endTime - startTime) / 1000;
+            
+            const totalPixels = RENDER_WIDTH * RENDER_HEIGHT;
+            const loadWeight = 50; 
+            const pps = totalPixels / durationSec;
+            finalScore = Math.floor(pps / 10 * loadWeight / 100); 
+
+            scoreDisplay.textContent = `${finalScore} pts`;
+            statusText.textContent = "Benchmark Complete";
+            startBtn.disabled = false;
+            startBtn.textContent = "RUN AGAIN";
+            
+            // Show Share Buttons
+            shareArea.classList.remove('hidden');
+        }
+
+        copyBtn.addEventListener('click', () => {
+            const cpuName = cpuInput.value || "Unknown CPU";
+            const text = `WebBench Score: ${finalScore} pts (${logicalProcessors} Threads / ${cpuName}) - Ludicrous Mode`;
+            
+            // Fallback for iframe restrictions using document.execCommand
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            textArea.style.position = "fixed";  // Avoid scrolling to bottom
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            
+            try {
+                const successful = document.execCommand('copy');
+                if(successful) {
+                    const originalText = copyBtn.textContent;
+                    copyBtn.textContent = "Copied!";
+                    setTimeout(() => copyBtn.textContent = originalText, 2000);
+                } else {
+                    console.error('Copy command failed');
+                }
+            } catch (err) {
+                console.error('Fallback: Oops, unable to copy', err);
+            }
+            
+            document.body.removeChild(textArea);
+        });
+
+        // --- Event Listeners ---
+        startBtn.addEventListener('click', startBenchmark);
+
+        // Initial Clear
+        ctx.fillStyle = '#0f0f13';
+        ctx.fillRect(0, 0, RENDER_WIDTH, RENDER_HEIGHT);
+        ctx.fillStyle = '#9333ea';
+        ctx.font = '30px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText("LUDICROUS MODE", RENDER_WIDTH/2, RENDER_HEIGHT/2);
+
+    </script>
+</body>
+</html>
