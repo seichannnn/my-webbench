@@ -160,6 +160,18 @@
                     </select>
                 </div>
 
+                <!-- Duration Selector -->
+                <div class="mb-4">
+                    <label class="block text-xs text-gray-400 mb-1">Test Duration</label>
+                    <select id="duration-select" class="mode-select w-full text-white text-sm py-2 px-3 rounded">
+                        <option value="default">Standard (Default)</option>
+                        <option value="60000">1 Minute (Stress Test)</option>
+                        <option value="180000">3 Minutes (Stress Test)</option>
+                        <option value="300000">5 Minutes (Stress Test)</option>
+                        <option value="600000">10 Minutes (Stability Test)</option>
+                    </select>
+                </div>
+
                 <button id="start-btn" class="btn-primary w-full text-white font-bold py-3 sm:py-4 px-6 rounded-md shadow-lg mb-3 text-base sm:text-lg transition-all duration-300">
                     RUN BENCHMARK
                 </button>
@@ -284,7 +296,6 @@
             if (e.data.taskType === 'ram') {
                 // RAM BENCHMARK
                 const size = 32 * 1024 * 1024; // 32MB per chunk per pass
-                // We do a write pass and a read pass
                 const arr = new Uint32Array(size / 4);
                 
                 const t0 = performance.now();
@@ -292,15 +303,13 @@
                 for(let i=0; i<arr.length; i++) {
                     arr[i] = i ^ 0xDEADBEEF;
                 }
-                // Read/Check Pass (Sum)
+                // Read/Check Pass
                 let sum = 0;
                 for(let i=0; i<arr.length; i++) {
                     sum += arr[i];
                 }
                 const t1 = performance.now();
                 
-                // Return MB processed (Read+Write = size*2) and time
-                // Using array buffer is not included in 'size' here, but read/write ops are.
                 self.postMessage({ 
                     taskType: 'ram', 
                     workerId: e.data.workerId, 
@@ -359,6 +368,7 @@
         const copyBtn = document.getElementById('copy-btn');
         const cpuInput = document.getElementById('cpu-name-input');
         const modeSelect = document.getElementById('mode-select');
+        const durationSelect = document.getElementById('duration-select');
         const bodyApp = document.getElementById('body-app');
         const scoreList = document.getElementById('score-list');
 
@@ -368,27 +378,28 @@
         let currentMode = 'cpu'; 
         let isRunning = false;
         let finalScore = 0;
+        let selectedDuration = 'default';
+        let startTime = 0;
         
         // CPU State
         let workers = [];
         let taskQueue = [];
         let completedBlocks = 0;
         let totalBlocks = 0;
-        let cpuStartTime;
+        let cpuFrames = 0;
         let logicalProcessors = navigator.hardwareConcurrency || 4;
 
         // RAM State
         let ramTotalBytes = 0;
         let ramTotalTime = 0;
         let ramIterations = 0;
-        const RAM_TEST_PASSES = 10; // How many times each core runs the test
+        const RAM_PASS_DEFAULT = 10; 
 
         // GPU State
         let gl;
-        let gpuStartTime;
         let gpuFrameCount = 0;
         let gpuAnimationId;
-        const GPU_TEST_DURATION_MS = 10000; 
+        const GPU_DUR_DEFAULT = 10000; 
 
         // Init UI
         coreCountDisplay.textContent = `${logicalProcessors} Threads`;
@@ -398,6 +409,10 @@
             if (isRunning) return;
             currentMode = e.target.value;
             updateUITheme();
+        });
+
+        durationSelect.addEventListener('change', (e) => {
+            selectedDuration = e.target.value;
         });
 
         function updateUITheme() {
@@ -509,8 +524,10 @@
             isRunning = true;
             startBtn.disabled = true;
             modeSelect.disabled = true;
+            durationSelect.disabled = true;
             shareArea.classList.add('hidden');
             scoreDisplay.textContent = "Running...";
+            startTime = performance.now();
             
             if (currentMode === 'cpu') runCpuBenchmark();
             else if (currentMode === 'gpu') runGpuBenchmark();
@@ -521,14 +538,12 @@
         // RAM BENCHMARK LOGIC
         // ==========================================
         function runRamBenchmark() {
-            // Setup Workers for RAM
             if(workers.length > 0) workers.forEach(w => w.worker.terminate());
             workers = [];
             const workerScript = document.getElementById('worker-code').textContent;
             const blob = new Blob([workerScript], { type: 'text/javascript' });
             const workerUrl = URL.createObjectURL(blob);
 
-            // Re-create workers
             for (let i = 0; i < logicalProcessors; i++) {
                 const w = new Worker(workerUrl);
                 w.onmessage = handleRamMessage;
@@ -536,50 +551,55 @@
             }
 
             ramTotalBytes = 0;
-            ramTotalTime = 0; // Sum of durations? No, max duration of parallel.
-            // Actually bandwidth = TotalBytes / Max(Duration) of concurrent block
-            // To simplify, we run N passes.
-            
+            ramTotalTime = 0; 
             ramIterations = 0;
             statusText.textContent = "Testing Memory Bandwidth...";
             
-            // Start Pass 1
             startRamPass();
         }
 
         function startRamPass() {
-            if (ramIterations >= RAM_TEST_PASSES) {
+            // Check condition
+            const elapsedMs = performance.now() - startTime;
+            let shouldStop = false;
+            
+            if (selectedDuration === 'default') {
+                if (ramIterations >= RAM_PASS_DEFAULT) shouldStop = true;
+            } else {
+                if (elapsedMs >= parseInt(selectedDuration)) shouldStop = true;
+            }
+
+            if (shouldStop) {
                 finishRamBenchmark();
                 return;
             }
+
             ramIterations++;
-            statusText.textContent = `Testing RAM... Pass ${ramIterations}/${RAM_TEST_PASSES}`;
+            if (selectedDuration === 'default') {
+                statusText.textContent = `Testing RAM... Pass ${ramIterations}/${RAM_PASS_DEFAULT}`;
+            } else {
+                statusText.textContent = `Testing RAM... ${(elapsedMs/1000).toFixed(0)}s elapsed`;
+            }
             
-            // Visualizer update
             document.querySelectorAll('.ram-cell').forEach(c => c.classList.add('active'));
 
-            // Dispatch to all workers
             const tStart = performance.now();
             let pending = workers.length;
             let batchBytes = 0;
 
             workers.forEach(w => {
                 w.worker.postMessage({ taskType: 'ram', workerId: w.id });
-                // We override the onmessage slightly to handle batch completion
                 w.worker.onmessage = (e) => {
                     batchBytes += e.data.bytesProcessed;
                     pending--;
                     if(pending === 0) {
                         const tEnd = performance.now();
-                        const dur = (tEnd - tStart) / 1000; // sec
-                        // Add to totals
-                        // We average bandwidth over passes
-                        // Bandwidth of this pass = batchBytes / dur
+                        const dur = (tEnd - tStart) / 1000; 
                         ramTotalBytes += batchBytes;
                         ramTotalTime += dur;
                         
                         document.querySelectorAll('.ram-cell').forEach(c => c.classList.remove('active'));
-                        setTimeout(startRamPass, 50); // Small delay
+                        setTimeout(startRamPass, 50); 
                     }
                 };
             });
@@ -589,16 +609,11 @@
             isRunning = false;
             startBtn.disabled = false;
             modeSelect.disabled = false;
+            durationSelect.disabled = false;
             
-            // Avg Bandwidth = (Total Bytes / Total Time) 
-            // Note: Total Time is sum of pass durations
             const avgBwBytes = ramTotalBytes / ramTotalTime; 
-            const avgBwGB = avgBwBytes / (1024*1024*1024); // GB/s
+            const avgBwGB = avgBwBytes / (1024*1024*1024); 
             
-            // Score scaling. 1 GB/s = ~50 pts?
-            // DDR4 ~40GB/s -> 2000pts. 
-            // Apple M1 ~60GB/s (JS limit) -> 3000pts.
-            // Let's make it look nice.
             finalScore = Math.floor(avgBwGB * 60); 
             
             scoreDisplay.textContent = `${finalScore} pts`;
@@ -607,21 +622,12 @@
             shareArea.classList.remove('hidden');
         }
 
-        function handleRamMessage(e) {
-            // Placeholder, logic moved to startRamPass closure
-        }
+        function handleRamMessage(e) {}
 
         // ==========================================
         // CPU BENCHMARK LOGIC
         // ==========================================
         function runCpuBenchmark() {
-            const canvas = document.getElementById('render-canvas');
-            const ctx = canvas.getContext('2d');
-            
-            // Clear black
-            ctx.fillStyle = '#000';
-            ctx.fillRect(0, 0, CPU_RES_W, CPU_RES_H);
-
             // Setup Workers
             workers.forEach(w => w.worker.terminate());
             workers = []; // clear old workers
@@ -643,7 +649,18 @@
                 workers.push({ id: i, worker: w, busy: false, bucketEl: bucket });
             }
 
-            // Tasks
+            cpuFrames = 0;
+            startCpuFrame();
+            requestAnimationFrame(updateCpuTimer);
+        }
+
+        function startCpuFrame() {
+            // Clear canvas for each loop to show progress visually
+            const canvas = document.getElementById('render-canvas');
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, CPU_RES_W, CPU_RES_H);
+
             taskQueue = [];
             let id = 0;
             const bs = 32;
@@ -659,17 +676,16 @@
             taskQueue.sort((a, b) => a.distSq - b.distSq);
             totalBlocks = taskQueue.length;
             completedBlocks = 0;
-
-            cpuStartTime = performance.now();
-            statusText.textContent = "Raytracing on CPU...";
             
+            if (cpuFrames === 0) statusText.textContent = "Raytracing on CPU...";
+            else statusText.textContent = `Looping... Pass ${cpuFrames + 1}`;
+
             workers.forEach(w => assignCpuTask(w));
-            requestAnimationFrame(updateCpuTimer);
         }
 
         function assignCpuTask(wObj) {
             if (taskQueue.length === 0) {
-                if (workers.every(w => !w.busy)) finishCpuBenchmark();
+                if (workers.every(w => !w.busy)) finishCpuFrame();
                 return;
             }
             const t = taskQueue.shift();
@@ -709,24 +725,51 @@
 
         function updateCpuTimer() {
             if (!isRunning || currentMode !== 'cpu') return;
-            const elapsed = (performance.now() - cpuStartTime) / 1000;
+            const elapsed = (performance.now() - startTime) / 1000;
             timeDisplay.textContent = `Time: ${elapsed.toFixed(2)}s`;
-            statusText.textContent = `CPU Processing... (${Math.floor(completedBlocks/totalBlocks*100)}%)`;
+            
+            // Just visual update logic for loop
+            // Logic handled in finishCpuFrame
+            
             requestAnimationFrame(updateCpuTimer);
         }
 
-        function finishCpuBenchmark() {
+        function finishCpuFrame() {
+            cpuFrames++;
+            const elapsedMs = performance.now() - startTime;
+            
+            // Check if we should stop or loop
+            let shouldStop = false;
+            if (selectedDuration === 'default') {
+                shouldStop = true; // One pass
+            } else {
+                if (elapsedMs >= parseInt(selectedDuration)) shouldStop = true;
+            }
+
+            if (shouldStop) {
+                finishCpuBenchmarkAll();
+            } else {
+                // Loop
+                // Optional: Clear canvas or keep overwriting? 
+                // Overwriting is fine and faster.
+                startCpuFrame();
+            }
+        }
+
+        function finishCpuBenchmarkAll() {
             isRunning = false;
             startBtn.disabled = false;
             modeSelect.disabled = false;
-            const dur = (performance.now() - cpuStartTime) / 1000;
-            const pixels = CPU_RES_W * CPU_RES_H;
+            durationSelect.disabled = false;
+            
+            const dur = (performance.now() - startTime) / 1000;
+            const pixels = CPU_RES_W * CPU_RES_H * cpuFrames;
             const loadWeight = 75;
             const pps = pixels / dur;
             finalScore = Math.floor(pps / 10 * loadWeight / 100);
             
             scoreDisplay.textContent = `${finalScore} pts`;
-            statusText.textContent = "CPU Benchmark Complete";
+            statusText.textContent = `CPU Benchmark Complete (${cpuFrames} loops)`;
             startBtn.textContent = "RUN AGAIN";
             shareArea.classList.remove('hidden');
         }
@@ -784,7 +827,7 @@
         function runGpuBenchmark() {
             const canvas = document.getElementById('render-canvas');
             gl = canvas.getContext('webgl');
-            if (!gl) { alert('WebGL not supported'); isRunning = false; startBtn.disabled = false; modeSelect.disabled = false; return; }
+            if (!gl) { alert('WebGL not supported'); isRunning = false; startBtn.disabled = false; modeSelect.disabled = false; durationSelect.disabled = false; return; }
             const vs = loadShader(gl, gl.VERTEX_SHADER, vsSource);
             const fs = loadShader(gl, gl.FRAGMENT_SHADER, fsSource);
             const program = gl.createProgram();
@@ -800,14 +843,23 @@
             const uRes = gl.getUniformLocation(program, 'u_resolution');
             const uTime = gl.getUniformLocation(program, 'u_time');
             gl.uniform2f(uRes, canvas.width, canvas.height);
+            
             gpuStartTime = performance.now();
             gpuFrameCount = 0;
-            statusText.textContent = "Stressing GPU (10s)...";
+            
+            let durText = selectedDuration === 'default' ? "10s" : `${parseInt(selectedDuration)/1000}s`;
+            statusText.textContent = `Stressing GPU (${durText})...`;
+            
             function render(now) {
                 if (!isRunning) return;
+                
                 const elapsed = now - gpuStartTime;
-                timeDisplay.textContent = `Time: ${(elapsed/1000).toFixed(2)}s / 10.00s`;
-                if (elapsed > GPU_TEST_DURATION_MS) { finishGpuBenchmark(elapsed); return; }
+                timeDisplay.textContent = `Time: ${(elapsed/1000).toFixed(2)}s`;
+                
+                let targetTime = selectedDuration === 'default' ? GPU_DUR_DEFAULT : parseInt(selectedDuration);
+
+                if (elapsed > targetTime) { finishGpuBenchmark(elapsed); return; }
+                
                 gl.uniform1f(uTime, elapsed / 1000.0);
                 gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
                 gpuFrameCount++;
@@ -823,7 +875,7 @@
             return shader;
         }
         function finishGpuBenchmark(durationMs) {
-            isRunning = false; startBtn.disabled = false; modeSelect.disabled = false;
+            isRunning = false; startBtn.disabled = false; modeSelect.disabled = false; durationSelect.disabled = false;
             const durationSec = durationMs / 1000;
             const avgFps = gpuFrameCount / durationSec;
             finalScore = Math.floor(avgFps * 350); 
@@ -841,7 +893,14 @@
             else if (currentMode === 'gpu') modeName = 'GPU (Mandelbox)';
             else modeName = 'RAM (Bandwidth)';
             
-            const text = `WebBench Score: ${finalScore} pts [${modeName}] - ${cpuName}`;
+            // Add duration info to copy
+            let durLabel = "Standard";
+            if (selectedDuration === '60000') durLabel = "1min";
+            if (selectedDuration === '180000') durLabel = "3min";
+            if (selectedDuration === '300000') durLabel = "5min";
+            if (selectedDuration === '600000') durLabel = "10min";
+
+            const text = `WebBench Score: ${finalScore} pts [${modeName}] (${durLabel}) - ${cpuName}`;
             const textArea = document.createElement("textarea");
             textArea.value = text;
             textArea.style.position = "fixed";
