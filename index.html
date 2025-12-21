@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WebBench - CPU, GPU & RAM Benchmark</title>
+    <title>WebBench - CPU, GPU, RAM & AI Benchmark</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body {
@@ -115,9 +115,16 @@
         .mode-ram .btn-primary { background: linear-gradient(135deg, #10b981 0%, #047857 100%); }
         .mode-ram .badge-ludicrous { background-color: #10b981; box-shadow: 0 0 10px rgba(16, 185, 129, 0.5); }
         .mode-ram .canvas-container { box-shadow: 0 0 30px rgba(16, 185, 129, 0.3); }
+
+        /* AI Mode (Cyan) */
+        .mode-ai .text-purple-400 { color: #06b6d4; } /* Cyan 500 */
+        .mode-ai .border-purple-900\/50 { border-color: rgba(8, 145, 178, 0.5); }
+        .mode-ai .btn-primary { background: linear-gradient(135deg, #06b6d4 0%, #0e7490 100%); }
+        .mode-ai .badge-ludicrous { background-color: #06b6d4; box-shadow: 0 0 10px rgba(6, 182, 212, 0.5); }
+        .mode-ai .canvas-container { box-shadow: 0 0 30px rgba(6, 182, 212, 0.3); }
         
-        /* RAM Visualizer in Canvas */
-        .ram-grid {
+        /* RAM/AI Visualizer in Canvas */
+        .ram-grid, .ai-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(20px, 1fr));
             width: 100%;
@@ -132,6 +139,14 @@
         .ram-cell.active {
             background-color: #34d399;
             box-shadow: 0 0 5px #34d399;
+        }
+        .ai-cell {
+            background-color: #164e63; /* Cyan 900 */
+            transition: background-color 0.05s;
+        }
+        .ai-cell.active {
+            background-color: #22d3ee; /* Cyan 400 */
+            box-shadow: 0 0 8px #22d3ee;
         }
     </style>
 </head>
@@ -166,6 +181,7 @@
                         <option value="cpu">CPU (Raytracing)</option>
                         <option value="gpu">GPU (WebGL Fractal)</option>
                         <option value="ram">Memory (RAM Speed)</option>
+                        <option value="ai">AI (Matrix Math)</option>
                     </select>
                 </div>
 
@@ -330,6 +346,41 @@
                     check: sum
                 });
 
+            } else if (e.data.taskType === 'ai') {
+                // AI BENCHMARK (Matrix Math)
+                // Perform a moderate matrix multiplication loop
+                const N = 512; // Matrix Size 512x512
+                const A = new Float32Array(N*N);
+                const B = new Float32Array(N*N);
+                const C = new Float32Array(N*N);
+                
+                // Initialize
+                for(let i=0; i<N*N; i++) { A[i] = Math.random(); B[i] = Math.random(); }
+                
+                const t0 = performance.now();
+                
+                // Simple Naive MatMul O(N^3)
+                // Optimization: Flattened loops
+                for (let i = 0; i < N; i++) {
+                    for (let k = 0; k < N; k++) {
+                        let r = A[i * N + k];
+                        for (let j = 0; j < N; j++) {
+                            C[i * N + j] += r * B[k * N + j];
+                        }
+                    }
+                }
+                
+                const t1 = performance.now();
+                // Ops = 2 * N^3
+                const ops = 2 * Math.pow(N, 3);
+                
+                self.postMessage({
+                    taskType: 'ai',
+                    workerId: e.data.workerId,
+                    ops: ops,
+                    duration: t1 - t0
+                });
+
             } else {
                 // RAYTRACING BENCHMARK
                 const { taskId, startX, startY, width, height, canvasWidth, canvasHeight } = e.data;
@@ -410,6 +461,13 @@
         let ramTimeoutId; // Store Timeout ID for cancelling
         const RAM_PASS_DEFAULT = 10; 
 
+        // AI State
+        let aiTotalOps = 0;
+        let aiTotalTime = 0;
+        let aiIterations = 0;
+        let aiTimeoutId;
+        const AI_PASS_DEFAULT = 5;
+
         // GPU State
         let gl;
         let gpuFrameCount = 0;
@@ -459,6 +517,21 @@
                     const cell = document.createElement('div');
                     cell.className = 'ram-cell rounded';
                     cell.id = `ram-cell-${i}`;
+                    grid.appendChild(cell);
+                }
+            } else if (currentMode === 'ai') {
+                bodyApp.classList.add('mode-ai');
+                statusText.textContent = "Ready (Matrix Math)";
+                resDisplay.textContent = "Test: FP32 Matrix Multiplication";
+                startBtn.textContent = "RUN AI BENCHMARK";
+                updateScores('ai');
+                // Setup visualizer
+                canvasWrapper.innerHTML = `<div class="ai-grid" id="ai-visualizer"></div>`;
+                const grid = document.getElementById('ai-visualizer');
+                for(let i=0; i<logicalProcessors; i++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'ai-cell rounded';
+                    cell.id = `ai-cell-${i}`;
                     grid.appendChild(cell);
                 }
             }
@@ -522,12 +595,26 @@
                         <div class="flex flex-col"><span class="font-medium text-green-400">DDR4-3200</span><span class="text-[10px] sm:text-xs text-gray-500">Dual Channel</span></div>
                         <span class="font-mono text-green-400 text-base sm:text-lg">~2500 pts</span>
                     </div>`;
+            } else if (mode === 'ai') {
+                html += `
+                    <div class="flex justify-between items-center p-3 bg-gray-800/50 rounded-md opacity-80">
+                        <div class="flex flex-col"><span class="font-medium text-cyan-200">M2 Ultra</span><span class="text-[10px] sm:text-xs text-gray-500">Neural Engine</span></div>
+                        <span class="font-mono text-cyan-200 text-base sm:text-lg">~5000 pts</span>
+                    </div>
+                    <div class="flex justify-between items-center p-3 bg-gray-800/50 rounded-md opacity-80">
+                        <div class="flex flex-col"><span class="font-medium text-cyan-300">Core i9-13900K</span><span class="text-[10px] sm:text-xs text-gray-500">24C/32T AVX2</span></div>
+                        <span class="font-mono text-cyan-300 text-base sm:text-lg">~3500 pts</span>
+                    </div>
+                    <div class="flex justify-between items-center p-3 bg-gray-800/50 rounded-md opacity-80">
+                        <div class="flex flex-col"><span class="font-medium text-cyan-400">Ryzen 7 5700X</span><span class="text-[10px] sm:text-xs text-gray-500">8C/16T</span></div>
+                        <span class="font-mono text-cyan-400 text-base sm:text-lg">~1800 pts</span>
+                    </div>`;
             }
             scoreList.innerHTML = html;
         }
 
         function createCanvasElement() {
-            if (currentMode === 'ram') return; // Handled separately
+            if (currentMode === 'ram' || currentMode === 'ai') return; // Handled separately
             canvasWrapper.innerHTML = '';
             const c = document.createElement('canvas');
             c.id = 'render-canvas';
@@ -545,6 +632,7 @@
             cancelAnimationFrame(cpuAnimationId);
             cancelAnimationFrame(gpuAnimationId);
             clearTimeout(ramTimeoutId);
+            clearTimeout(aiTimeoutId);
 
             // Kill Workers
             workers.forEach(w => w.worker.terminate());
@@ -562,8 +650,9 @@
             // Clear bucket visuals
             document.querySelectorAll('.bucket').forEach(el => el.remove());
             
-            // Reset RAM visuals
+            // Reset RAM/AI visuals
             document.querySelectorAll('.ram-cell').forEach(c => c.classList.remove('active'));
+            document.querySelectorAll('.ai-cell').forEach(c => c.classList.remove('active'));
         }
 
         // --- Main Runner ---
@@ -576,8 +665,6 @@
             isRunning = true;
             startBtn.textContent = "CANCEL";
             startBtn.classList.add('btn-danger');
-            // Disabled is removed, we want to click it to cancel.
-            // But we should disable inputs.
             modeSelect.disabled = true;
             durationSelect.disabled = true;
             
@@ -588,7 +675,99 @@
             if (currentMode === 'cpu') runCpuBenchmark();
             else if (currentMode === 'gpu') runGpuBenchmark();
             else if (currentMode === 'ram') runRamBenchmark();
+            else if (currentMode === 'ai') runAiBenchmark();
         });
+
+        // ==========================================
+        // AI BENCHMARK LOGIC
+        // ==========================================
+        function runAiBenchmark() {
+            if(workers.length > 0) workers.forEach(w => w.worker.terminate());
+            workers = [];
+            const workerScript = document.getElementById('worker-code').textContent;
+            const blob = new Blob([workerScript], { type: 'text/javascript' });
+            const workerUrl = URL.createObjectURL(blob);
+
+            for (let i = 0; i < logicalProcessors; i++) {
+                const w = new Worker(workerUrl);
+                w.onmessage = handleAiMessage;
+                workers.push({ id: i, worker: w, iterations: 0 });
+            }
+
+            aiTotalOps = 0;
+            aiTotalTime = 0;
+            aiIterations = 0;
+            statusText.textContent = "Crunching Matrix Math...";
+            
+            startAiPass();
+        }
+
+        function startAiPass() {
+            const elapsedMs = performance.now() - startTime;
+            let shouldStop = false;
+            
+            if (selectedDuration === 'default') {
+                if (aiIterations >= AI_PASS_DEFAULT) shouldStop = true;
+            } else {
+                if (elapsedMs >= parseInt(selectedDuration)) shouldStop = true;
+            }
+
+            if (shouldStop) {
+                finishAiBenchmark();
+                return;
+            }
+
+            aiIterations++;
+            if (selectedDuration === 'default') {
+                statusText.textContent = `Processing Matrices... Pass ${aiIterations}/${AI_PASS_DEFAULT}`;
+            } else {
+                statusText.textContent = `Processing Matrices... ${(elapsedMs/1000).toFixed(0)}s elapsed`;
+            }
+            
+            document.querySelectorAll('.ai-cell').forEach(c => c.classList.add('active'));
+
+            const tStart = performance.now();
+            let pending = workers.length;
+            let batchOps = 0;
+
+            workers.forEach(w => {
+                w.worker.postMessage({ taskType: 'ai', workerId: w.id });
+                w.worker.onmessage = (e) => {
+                    batchOps += e.data.ops;
+                    pending--;
+                    if(pending === 0) {
+                        const tEnd = performance.now();
+                        const dur = (tEnd - tStart) / 1000; 
+                        aiTotalOps += batchOps;
+                        aiTotalTime += dur;
+                        
+                        document.querySelectorAll('.ai-cell').forEach(c => c.classList.remove('active'));
+                        aiTimeoutId = setTimeout(startAiPass, 50); 
+                    }
+                };
+            });
+        }
+
+        function finishAiBenchmark() {
+            isRunning = false;
+            startBtn.textContent = "RUN AGAIN";
+            startBtn.classList.remove('btn-danger');
+            modeSelect.disabled = false;
+            durationSelect.disabled = false;
+            
+            // Avg GFLOPS = Total Ops / Total Time / 1e9
+            const avgGflops = (aiTotalOps / aiTotalTime) / 1e9;
+            
+            // Score Scaling
+            // 1 GFLOPS = 20 pts?
+            finalScore = Math.floor(avgGflops * 20); 
+            
+            scoreDisplay.textContent = `${finalScore} pts`;
+            statusText.textContent = `AI Speed: ~${avgGflops.toFixed(2)} GFLOPS`;
+            shareArea.classList.remove('hidden');
+        }
+
+        function handleAiMessage(e) {}
 
         // ==========================================
         // RAM BENCHMARK LOGIC
@@ -615,7 +794,6 @@
         }
 
         function startRamPass() {
-            // Check condition
             const elapsedMs = performance.now() - startTime;
             let shouldStop = false;
             
@@ -949,6 +1127,7 @@
             let modeName = '';
             if (currentMode === 'cpu') modeName = 'CPU (Heavy)';
             else if (currentMode === 'gpu') modeName = 'GPU (Mandelbox)';
+            else if (currentMode === 'ai') modeName = 'AI (Matrix Math)';
             else modeName = 'RAM (Bandwidth)';
             
             // Add duration info to copy
