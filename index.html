@@ -269,7 +269,7 @@
                     <!-- Scores injected via JS -->
                 </div>
                 
-                <div class="mt-4 sm:mt-6 text-[10px] sm:text-xs text-gray-500 text-center border-t border-gray-800 pt-3">
+                <div class="mt-4 sm:mt-6 text-[10px] sm:text-xs text-gray-500 text-center border-t border-gray-800 pt-3" id="score-note">
                      *Scores vary by browser/driver
                 </div>
             </div>
@@ -362,7 +362,7 @@
 
                 <div class="p-3 bg-gray-800/50 rounded-lg border-l-4 border-slate-500">
                     <h3 class="text-slate-400 font-bold text-sm">Storage (Disk I/O)</h3>
-                    <p class="text-gray-300 text-xs mt-1">Origin Private File Systemに対してデータの読み書きを行います。ストレージ速度をテストします。</p>
+                    <p class="text-gray-300 text-xs mt-1">Origin Private File Systemに対してデータの読み書きを行います。ブラウザのセキュリティ制限により、ネイティブアプリよりも低い数値が出る場合があります。</p>
                 </div>
             </div>
             
@@ -658,6 +658,7 @@
         const durationSelect = document.getElementById('duration-select');
         const bodyApp = document.getElementById('body-app');
         const scoreList = document.getElementById('score-list');
+        const scoreNote = document.getElementById('score-note');
         const aboutBtn = document.getElementById('about-btn');
         const modal = document.getElementById('about-modal');
         const closeModalBtn = document.getElementById('close-modal');
@@ -740,17 +741,33 @@
                 if (modeClass) bodyApp.classList.add(modeClass);
             };
 
-            if (currentMode === 'cpu') setUI("Ready (1080p / 8x AA / 140+ Objs)", "Scene: High Density Spheres | Res: 1920x1080", "RUN CPU BENCHMARK");
-            else if (currentMode === 'cpu-single') setUI("Ready (1 Thread / 1080p / Heavy)", "Test: Single Core Performance", "RUN SINGLE CORE", "mode-cpu-single");
-            else if (currentMode === 'gpu') setUI("Ready (Mandelbox Fractal)", "Scene: 3D Fractal | Res: 1920x1080", "RUN GPU BENCHMARK", "mode-gpu");
-            else if (currentMode === 'physics') setUI("Ready (Particle Simulation)", "Scene: 4000 Particles / 100 Steps", "RUN PHYSICS BENCHMARK", "mode-physics");
-            else if (currentMode === 'sprite') setUI("Ready (10,000 Sprites)", "Test: Canvas 2D Draw Performance", "RUN SPRITE BENCHMARK", "mode-sprite");
-            else if (currentMode === 'ram') { setUI("Ready (Read/Write Bandwidth)", "Test: Multi-core Sequential Access", "RUN RAM BENCHMARK", "mode-ram"); createVisualizer('ram'); }
-            else if (currentMode === 'ai') { setUI("Ready (Matrix Math)", "Test: FP32 Matrix Multiplication", "RUN AI BENCHMARK", "mode-ai"); createVisualizer('ai'); }
-            else if (currentMode === 'hash') { setUI("Ready (Integer Hashing)", "Test: Bitwise Integer Operations", "RUN HASH BENCHMARK", "mode-hash"); createVisualizer('hash'); }
-            else if (currentMode === 'compress') { setUI("Ready (Logic/Compression)", "Test: LZW Text Processing", "RUN COMPRESSION BENCHMARK", "mode-compress"); createVisualizer('compress'); }
-            else if (currentMode === 'logic') { setUI("Ready (Pure Script Logic)", "Test: Recursion & Sorting", "RUN LOGIC BENCHMARK", "mode-logic"); createVisualizer('logic'); }
-            else if (currentMode === 'storage') { setUI("Ready (OPFS Read/Write)", "Test: Virtual File System IO", "RUN STORAGE BENCHMARK", "mode-storage"); createVisualizer('storage'); }
+            // Reset Note
+            scoreNote.textContent = "*Scores vary by browser/driver";
+
+            if (currentMode === 'cpu') {
+                setUI("Ready (1080p / 8x AA / 140+ Objs)", "Scene: High Density Spheres | Res: 1920x1080", "RUN CPU BENCHMARK");
+            } else if (currentMode === 'cpu-single') {
+                setUI("Ready (1 Thread / 1080p / Heavy)", "Test: Single Core Performance", "RUN SINGLE CORE", "mode-cpu-single");
+            } else if (currentMode === 'gpu') {
+                setUI("Ready (Mandelbox Fractal)", "Scene: 3D Fractal | Res: 1920x1080", "RUN GPU BENCHMARK", "mode-gpu");
+            } else if (currentMode === 'physics') {
+                setUI("Ready (Particle Simulation)", "Scene: 4000 Particles / 100 Steps", "RUN PHYSICS BENCHMARK", "mode-physics");
+            } else if (currentMode === 'sprite') {
+                setUI("Ready (10,000 Sprites)", "Test: Canvas 2D Draw Performance", "RUN SPRITE BENCHMARK", "mode-sprite");
+            } else if (currentMode === 'ram') { 
+                setUI("Ready (Read/Write Bandwidth)", "Test: Multi-core Sequential Access", "RUN RAM BENCHMARK", "mode-ram"); createVisualizer('ram'); 
+            } else if (currentMode === 'ai') { 
+                setUI("Ready (Matrix Math)", "Test: FP32 Matrix Multiplication", "RUN AI BENCHMARK", "mode-ai"); createVisualizer('ai'); 
+            } else if (currentMode === 'hash') { 
+                setUI("Ready (Integer Hashing)", "Test: Bitwise Integer Operations", "RUN HASH BENCHMARK", "mode-hash"); createVisualizer('hash'); 
+            } else if (currentMode === 'compress') { 
+                setUI("Ready (Logic/Compression)", "Test: LZW Text Processing", "RUN COMPRESSION BENCHMARK", "mode-compress"); createVisualizer('compress'); 
+            } else if (currentMode === 'logic') { 
+                setUI("Ready (Pure Script Logic)", "Test: Recursion & Sorting", "RUN LOGIC BENCHMARK", "mode-logic"); createVisualizer('logic'); 
+            } else if (currentMode === 'storage') { 
+                setUI("Ready (OPFS Read/Write)", "Test: Virtual File System IO", "RUN STORAGE BENCHMARK", "mode-storage"); createVisualizer('storage'); 
+                scoreNote.textContent = "*Browser sandbox may limit disk speed vs native apps.";
+            }
             
             updateScores(currentMode);
             scoreDisplay = document.getElementById('current-score');
